@@ -177,7 +177,7 @@ impl VirtualTablet {
         // to treat the device as a "Core Pointer" (Mouse), forcing mouse emulation (selection)
         // even when Touch is disabled. We revert to pure Multitouch to avoid this.
 
-        let mut touch_keys = AttributeSet::<Key>::new();
+        let touch_keys = AttributeSet::<Key>::new();
         // REMOVED ALL BUTTONS TO PREVENT "TOOL" CLASSIFICATION
         // touch_keys.insert(Key::BTN_LEFT);
         // touch_keys.insert(Key::BTN_TOOL_FINGER);
@@ -253,7 +253,7 @@ impl VirtualTablet {
                 // to prevent "stuck" clicks if the user rests their palm while a finger was still down.
                 let was_active = self
                     .last_pen_activity
-                    .map_or(false, |t| t.elapsed() < PALM_REJECTION_TIMEOUT);
+                    .is_some_and(|t| t.elapsed() < PALM_REJECTION_TIMEOUT);
                 self.last_pen_activity = Some(Instant::now());
 
                 if !was_active {

@@ -328,12 +328,13 @@ impl VideoEncoder {
         let mut stride = frame.stride as usize;
         let expected_row_data = row_len * frame.height as usize;
 
-        if stride == row_len && data.len() > expected_row_data {
-            if data.len() % frame.height as usize == 0 {
-                let inferred = data.len() / frame.height as usize;
-                if inferred >= row_len {
-                    stride = inferred;
-                }
+        if stride == row_len
+            && data.len() > expected_row_data
+            && data.len().is_multiple_of(frame.height as usize)
+        {
+            let inferred = data.len() / frame.height as usize;
+            if inferred >= row_len {
+                stride = inferred;
             }
         }
 
@@ -423,32 +424,27 @@ impl VideoEncoder {
         let _ = self.appsrc.end_of_stream();
 
         // Pull remaining frames
-        loop {
-            match self
-                .appsink
-                .try_pull_sample(gst::ClockTime::from_mseconds(100))
-            {
-                Some(sample) => {
-                    if let Some(buffer) = sample.buffer() {
-                        if let Ok(map) = buffer.map_readable() {
-                            let pts = buffer.pts().map(|t| t.useconds()).unwrap_or(0);
-                            let is_keyframe = is_h264_keyframe(map.as_slice());
-                            if is_keyframe {
-                                debug!(
-                                    "Flush keyframe detected, pts: {}, size: {} bytes",
-                                    pts,
-                                    map.as_slice().len()
-                                );
-                            }
-                            frames.push(EncodedFrame {
-                                is_keyframe,
-                                pts,
-                                data: map.as_slice().to_vec(),
-                            });
-                        }
+        while let Some(sample) = self
+            .appsink
+            .try_pull_sample(gst::ClockTime::from_mseconds(100))
+        {
+            if let Some(buffer) = sample.buffer() {
+                if let Ok(map) = buffer.map_readable() {
+                    let pts = buffer.pts().map(|t| t.useconds()).unwrap_or(0);
+                    let is_keyframe = is_h264_keyframe(map.as_slice());
+                    if is_keyframe {
+                        debug!(
+                            "Flush keyframe detected, pts: {}, size: {} bytes",
+                            pts,
+                            map.as_slice().len()
+                        );
                     }
+                    frames.push(EncodedFrame {
+                        is_keyframe,
+                        pts,
+                        data: map.as_slice().to_vec(),
+                    });
                 }
-                None => break,
             }
         }
 

@@ -18,6 +18,7 @@ pub enum NetworkError {
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
+    #[allow(dead_code)]
     #[error("packet too large: {size} bytes")]
     PacketTooLarge { size: usize },
 
@@ -43,11 +44,13 @@ impl UdpServer {
     }
 
     /// Get the local address.
+    #[allow(dead_code)]
     pub fn local_addr(&self) -> Result<SocketAddr, NetworkError> {
         Ok(self.socket.local_addr()?)
     }
 
     /// Send a packet to the specified address.
+    #[allow(dead_code)]
     pub async fn send(&self, data: &[u8], addr: SocketAddr) -> Result<(), NetworkError> {
         self.socket.send_to(data, addr).await?;
         Ok(())
@@ -94,6 +97,7 @@ impl TcpServer {
     }
 
     /// Get the local address.
+    #[allow(dead_code)]
     pub fn local_addr(&self) -> Result<SocketAddr, NetworkError> {
         Ok(self.listener.local_addr()?)
     }

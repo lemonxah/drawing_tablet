@@ -5,24 +5,19 @@ use drm_fourcc::{DrmFourcc, DrmModifier};
 use pipewire::context::Context;
 use pipewire::main_loop::MainLoop;
 use pipewire::properties::properties;
-use pipewire::spa::buffer::DataType;
-use pipewire::spa::param::video::{VideoFormat, VideoInfoRaw};
+use pipewire::spa::param::video::VideoFormat;
 use pipewire::spa::pod::serialize::GenError;
-use pipewire::spa::pod::{ChoiceValue, Object, Pod, Property, PropertyFlags, Value};
+use pipewire::spa::pod::{ChoiceValue, Object, Property, PropertyFlags, Value};
 use pipewire::spa::utils::{Choice, ChoiceEnum, ChoiceFlags, Direction};
 use pipewire::spa::{self};
 use pipewire::stream::{Stream, StreamFlags};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
-use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
 use thiserror::Error;
-use tracing::{error, info, trace, warn};
-
-// Import sys for constants
-use libspa_sys as spa_sys;
+use tracing::{error, info};
 
 /// Errors that can occur during screen capture.
 #[derive(Debug, Error)]
@@ -242,42 +237,39 @@ fn run_capture_loop(
                 return;
             }
 
-            match stream.dequeue_buffer() {
-                Some(mut buffer) => {
-                    let datas = buffer.datas_mut();
-                    if datas.is_empty() {
-                        return;
-                    }
-                    let data = &mut datas[0];
-                    let (offset, size, stride) = {
-                        let chunk = data.chunk();
-                        (
-                            chunk.offset() as usize,
-                            chunk.size() as usize,
-                            chunk.stride() as u32,
-                        )
-                    };
+            if let Some(mut buffer) = stream.dequeue_buffer() {
+                let datas = buffer.datas_mut();
+                if datas.is_empty() {
+                    return;
+                }
+                let data = &mut datas[0];
+                let (offset, size, stride) = {
+                    let chunk = data.chunk();
+                    (
+                        chunk.offset() as usize,
+                        chunk.size() as usize,
+                        chunk.stride() as u32,
+                    )
+                };
 
-                    // We rely on MAP_BUFFERS to give us a mapped slice
-                    if let Some(slice) = data.data() {
-                        let slice: &[u8] = slice;
+                // We rely on MAP_BUFFERS to give us a mapped slice
+                if let Some(slice) = data.data() {
+                    let slice: &[u8] = slice;
 
-                        if offset + size <= slice.len() {
-                            let frame_data = slice[offset..offset + size].to_vec();
+                    if offset + size <= slice.len() {
+                        let frame_data = slice[offset..offset + size].to_vec();
 
-                            let frame = Frame {
-                                width: width_clone,
-                                height: height_clone,
-                                format: PixelFormat::Bgra, // Assuming BGRA for now
-                                stride,
-                                data: FrameData::MemPtr(frame_data),
-                            };
+                        let frame = Frame {
+                            width: width_clone,
+                            height: height_clone,
+                            format: PixelFormat::Bgra, // Assuming BGRA for now
+                            stride,
+                            data: FrameData::MemPtr(frame_data),
+                        };
 
-                            let _ = frame_tx_clone.try_send(frame);
-                        }
+                        let _ = frame_tx_clone.try_send(frame);
                     }
                 }
-                None => {}
             }
         })
         .register();
@@ -319,24 +311,6 @@ fn obj_to_bytes(obj: Object) -> Result<Vec<u8>, GenError> {
     )?
     .0
     .into_inner())
-}
-
-fn get_buffer_params() -> Object {
-    let data_types = (1 << DataType::MemFd.as_raw())
-        | (1 << DataType::MemPtr.as_raw())
-        | (1 << DataType::DmaBuf.as_raw());
-
-    let property = Property {
-        key: spa_sys::SPA_PARAM_BUFFERS_dataType,
-        flags: PropertyFlags::empty(),
-        value: Value::Int(data_types),
-    };
-
-    spa::pod::object!(
-        spa::utils::SpaTypes::ObjectParamBuffers,
-        spa::param::ParamType::Buffers,
-        property,
-    )
 }
 
 fn get_format_params(fmt: Option<(&DrmFourcc, &Vec<DrmModifier>)>) -> Object {

@@ -1,0 +1,80 @@
+# Maintainer: lemonxah <lemonxah@gmail.com>
+# This PKGBUILD builds from the latest git commit
+pkgname=drawing-tablet-server-git
+pkgver=0.1.0.r0.g0000000
+pkgrel=1
+pkgdesc="Stream your desktop to an Android tablet and use it as a drawing tablet (git version)"
+arch=('x86_64')
+url="https://github.com/lemonxah/drawing_tablet"
+license=('MIT')
+depends=(
+    'gstreamer'
+    'gst-plugins-base'
+    'gst-plugins-good'
+    'gst-plugins-bad'      # For VA-API encoder
+    'gst-plugin-va'        # VA-API GStreamer plugin
+    'pipewire'
+    'libpipewire'
+    'xdg-desktop-portal'
+    'avahi'                # For mDNS service discovery
+    'hicolor-icon-theme'
+)
+makedepends=(
+    'rust'
+    'cargo'
+    'clang'
+    'pkgconf'
+    'git'
+)
+optdepends=(
+    'gst-plugins-bad: NVIDIA NVENC encoder support'
+    'intel-media-driver: Intel VA-API support'
+    'libva-mesa-driver: AMD VA-API support'
+)
+provides=("${pkgname%-git}")
+conflicts=("${pkgname%-git}")
+source=("git+$url.git")
+sha256sums=('SKIP')
+
+pkgver() {
+    cd "drawing_tablet"
+    printf "%s" "$(git describe --long --tags 2>/dev/null | sed 's/^v//;s/\([^-]*-g\)/r\1/;s/-/./g' || echo "0.1.0.r$(git rev-list --count HEAD).g$(git rev-parse --short HEAD)")"
+}
+
+prepare() {
+    cd "drawing_tablet"
+    export RUSTUP_TOOLCHAIN=stable
+    cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+    cd "drawing_tablet"
+    export RUSTUP_TOOLCHAIN=stable
+    export CARGO_TARGET_DIR=target
+    cargo build --release --locked --bin dt-server
+}
+
+check() {
+    cd "drawing_tablet"
+    export RUSTUP_TOOLCHAIN=stable
+    cargo test --release --locked --bin dt-server
+}
+
+package() {
+    cd "drawing_tablet"
+    
+    # Install binary
+    install -Dm755 "target/release/dt-server" "$pkgdir/usr/bin/drawing-tablet-server"
+    
+    # Install desktop file
+    install -Dm644 "pkg/drawing-tablet-server.desktop" "$pkgdir/usr/share/applications/drawing-tablet-server.desktop"
+    
+    # Install icon
+    install -Dm644 "crates/dt-server/assets/icon.png" "$pkgdir/usr/share/icons/hicolor/256x256/apps/drawing-tablet-server.png"
+    
+    # Install license
+    install -Dm644 "LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+    
+    # Install documentation
+    install -Dm644 "README.md" "$pkgdir/usr/share/doc/$pkgname/README.md"
+}

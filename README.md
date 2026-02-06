@@ -228,3 +228,17 @@ We use the Linux kernel's `uinput` module to create two virtual devices:
 
 **Q: Lines have random spikes/glitches in Krita.**
 *   This is caused by Krita's "Weighted Smoothing" brush setting. Change it to "Basic" or "None" in the Tool Options docker. See the [Krita Configuration](#krita-configuration) section above.
+
+---
+
+## 📄 License
+
+This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
+
+### Third-Party Libraries
+
+This software uses the following libraries at runtime:
+- **GStreamer** (LGPL-2.1+) - Multimedia framework
+- **PipeWire** (MIT/LGPL-2.1+) - Audio/Video routing
+
+These libraries are dynamically linked and can be replaced by the user.

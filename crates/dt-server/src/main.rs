@@ -426,7 +426,7 @@ async fn run_server(
         }
 
         // Update connected client in GUI stats
-        if sequence % 60 == 0 {
+        if sequence.is_multiple_of(60) {
             let mut guard = stats.lock().unwrap();
             guard.connected_client = client.as_ref().and_then(|c| c.udp_addr.map(|a| a.to_string()));
         }
@@ -463,8 +463,7 @@ async fn run_server(
             if let Some(ref c) = client {
                 if let Some(addr) = c.udp_addr {
                     let data = &encoded.data;
-                    let fragment_count =
-                        ((data.len() + MAX_FRAGMENT_DATA - 1) / MAX_FRAGMENT_DATA) as u16;
+                    let fragment_count = data.len().div_ceil(MAX_FRAGMENT_DATA) as u16;
 
                     let mut fragment_packets = Vec::with_capacity(fragment_count as usize);
                     let mut all_sent = true;
@@ -528,7 +527,7 @@ async fn run_server(
             last_heartbeat = Instant::now();
         }
 
-        // Print stats once per second
+        // Update stats once per second
         if last_stats.elapsed() > Duration::from_secs(1) {
             {
                 let mut guard = stats.lock().unwrap();
@@ -541,18 +540,6 @@ async fn run_server(
                 guard.errors = stats_encode_errors;
             }
 
-            if client.is_some() {
-                info!(
-                    "[stats] captured={} dropped={} encoded={} sent={} keyframes={} fragments={} errors={}",
-                    stats_captured,
-                    stats_dropped_frames,
-                    stats_encoded,
-                    stats_sent,
-                    stats_keyframes,
-                    stats_fragments,
-                    stats_encode_errors
-                );
-            }
             stats_captured = 0;
             stats_dropped_frames = 0;
             stats_encoded = 0;

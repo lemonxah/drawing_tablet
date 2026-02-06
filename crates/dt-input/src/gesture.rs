@@ -17,6 +17,12 @@ pub struct GestureDelta {
     pub rotate: f32, // Radians
 }
 
+impl Default for GestureDetector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl GestureDetector {
     pub fn new() -> Self {
         Self {

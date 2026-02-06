@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Drawing Tablet Server
+Comment=Stream your desktop to an Android tablet and use it as a drawing tablet
+GenericName=Drawing Tablet Server
+Exec=drawing-tablet-server
+Icon=drawing-tablet-server
+Terminal=false
+Type=Application
+Categories=Graphics;Utility;
+Keywords=tablet;drawing;wacom;stream;stylus;art;
+StartupNotify=true

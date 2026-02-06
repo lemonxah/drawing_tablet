@@ -246,7 +246,7 @@ impl eframe::App for DtServerApp {
                                 .color(egui::Color32::WHITE),
                         )
                         .fill(btn_color)
-                        .rounding(8.0),
+                        .corner_radius(8.0),
                     )
                     .clicked()
                 {
@@ -268,9 +268,9 @@ impl eframe::App for DtServerApp {
                 );
                 ui.add_space(5.0);
 
-                egui::Frame::none()
+                egui::Frame::new()
                     .fill(egui::Color32::from_rgb(20, 22, 30))
-                    .rounding(8.0)
+                    .corner_radius(8.0)
                     .inner_margin(10.0)
                     .show(ui, |ui| {
                         ui.add_enabled_ui(!is_running, |ui| {
@@ -316,7 +316,7 @@ impl eframe::App for DtServerApp {
                                 .color(egui::Color32::from_gray(200)),
                         )
                         .fill(egui::Color32::from_rgb(35, 38, 50))
-                        .rounding(6.0),
+                        .corner_radius(6.0),
                     )
                     .clicked()
                 {
@@ -384,9 +384,9 @@ impl eframe::App for DtServerApp {
                 ui.columns(2, |columns| {
                     // Button 0
                     let color0 = if stats.stylus_buttons[0] { egui::Color32::GREEN } else { egui::Color32::from_gray(50) };
-                    egui::Frame::none()
+                    egui::Frame::new()
                         .fill(egui::Color32::from_rgb(27, 30, 40))
-                        .rounding(6.0)
+                        .corner_radius(6.0)
                         .inner_margin(12.0)
                         .show(&mut columns[0], |ui| {
                             ui.set_width(ui.available_width());
@@ -400,9 +400,9 @@ impl eframe::App for DtServerApp {
     
                     // Button 1
                     let color1 = if stats.stylus_buttons[1] { egui::Color32::GREEN } else { egui::Color32::from_gray(50) };
-                    egui::Frame::none()
+                    egui::Frame::new()
                         .fill(egui::Color32::from_rgb(27, 30, 40))
-                        .rounding(6.0)
+                        .corner_radius(6.0)
                         .inner_margin(12.0)
                         .show(&mut columns[1], |ui| {
                             ui.set_width(ui.available_width());
@@ -427,9 +427,9 @@ impl eframe::App for DtServerApp {
             );
             ui.add_space(5.0);
 
-            egui::Frame::none()
+            egui::Frame::new()
                 .fill(egui::Color32::from_rgb(15, 17, 22))
-                .rounding(6.0)
+                .corner_radius(6.0)
                 .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(30, 32, 40)))
                 .inner_margin(10.0)
                 .show(ui, |ui| {
@@ -488,9 +488,9 @@ impl eframe::App for DtServerApp {
 impl DtServerApp {
     // Helper for rendering stat cards
     fn stat_card(&self, ui: &mut egui::Ui, title: &str, value: &str) {
-        egui::Frame::none()
+        egui::Frame::new()
             .fill(egui::Color32::from_rgb(27, 30, 40))
-            .rounding(6.0)
+            .corner_radius(6.0)
             .inner_margin(12.0)
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
