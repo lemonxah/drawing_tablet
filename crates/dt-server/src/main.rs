@@ -1,4 +1,8 @@
 //! Drawing tablet streaming server.
+//!
+//! Architecture:
+//! - TCP (port): Input and Control packets from client (reliable, ordered)
+//! - UDP (port): Video stream to client (low latency, lossy OK)
 
 mod config;
 mod gui;
@@ -8,19 +12,20 @@ use anyhow::Result;
 use config::ServerConfig;
 use dt_capture::{select_monitor, ScreenCapture};
 use dt_encoder::{EncoderConfig, VideoEncoder};
-use dt_input::VirtualTablet;
+use dt_input::{EventRetimer, VirtualTablet};
 use dt_protocol::{
     decode_packet, encode_control, encode_video, ControlPacket, DecodedPacket, VideoPacket,
     MAX_FRAGMENT_DATA, PROTOCOL_VERSION,
 };
 use gui::{DtServerApp, ServerStats};
-use network::UdpServer;
+use network::{TcpMessage, TcpServer, UdpServer};
 use std::net::SocketAddr;
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use tokio::sync::mpsc as tokio_mpsc;
 use tracing::{debug, error, info, warn};
 
 /// Keeps an `avahi-publish` child alive for the lifetime of the server.
@@ -171,10 +176,15 @@ pub async fn run_server_async(
     info!("Starting screen capture...");
     let capture = ScreenCapture::start(&monitor)?;
 
-    // Start UDP server
-    let bind_addr: SocketAddr = format!("0.0.0.0:{}", config.port).parse()?;
-    info!("Starting UDP server on {}", bind_addr);
-    let server = UdpServer::bind(bind_addr).await?;
+    // Start UDP server (for video streaming to client)
+    let udp_bind_addr: SocketAddr = format!("0.0.0.0:{}", config.port).parse()?;
+    info!("Starting UDP server on {} (video)", udp_bind_addr);
+    let udp_server = UdpServer::bind(udp_bind_addr).await?;
+
+    // Start TCP server (for input/control from client)
+    let tcp_bind_addr: SocketAddr = format!("0.0.0.0:{}", config.port).parse()?;
+    info!("Starting TCP server on {} (input/control)", tcp_bind_addr);
+    let tcp_server = TcpServer::bind(tcp_bind_addr).await?;
 
     // Advertise via mDNS so clients can discover us without a manual IP
     let service_name = format!("Drawing Tablet ({})", get_hostname());
@@ -196,7 +206,8 @@ pub async fn run_server_async(
 
     // Run the main server loop
     run_server(
-        server,
+        udp_server,
+        tcp_server,
         capture,
         encoder,
         tablet,
@@ -210,7 +221,8 @@ pub async fn run_server_async(
 }
 
 async fn run_server(
-    server: UdpServer,
+    udp_server: UdpServer,
+    tcp_server: TcpServer,
     capture: ScreenCapture,
     encoder: VideoEncoder,
     mut tablet: VirtualTablet,
@@ -220,8 +232,6 @@ async fn run_server(
     stats: Arc<Mutex<ServerStats>>,
     running: Arc<AtomicBool>,
 ) -> Result<()> {
-    // Note: We use the passed-in 'running' flag instead of creating a new one
-
     let (frame_tx, frame_rx) = mpsc::sync_channel(1);
     let (encoded_tx, encoded_rx) = mpsc::sync_channel(2);
     let encoder_running = Arc::new(AtomicBool::new(true));
@@ -246,9 +256,10 @@ async fn run_server(
 
             match encoder.encode(&frame) {
                 Ok(Some(mut encoded)) => {
-                    let pts = pts_counter_clone.fetch_add(1_000_000 / (fps as u64), Ordering::SeqCst);
+                    let pts =
+                        pts_counter_clone.fetch_add(1_000_000 / (fps as u64), Ordering::SeqCst);
                     encoded.pts = pts;
-                    if let Err(_) = encoded_tx.send(encoded) {
+                    if encoded_tx.send(encoded).is_err() {
                         break;
                     }
                 }
@@ -260,11 +271,21 @@ async fn run_server(
         }
     });
 
-    // Current connected client
-    let mut client_addr: Option<SocketAddr> = None;
+    // Channel for TCP messages from clients
+    let (tcp_msg_tx, mut tcp_msg_rx) = tokio_mpsc::channel::<TcpMessage>(256);
+
+    // Current connected client state
+    struct ClientState {
+        tcp_client_id: u64,
+        udp_addr: Option<SocketAddr>, // Set when client sends UDP port info
+    }
+    let mut client: Option<ClientState> = None;
     let mut sequence: u32 = 0;
     let mut last_heartbeat = Instant::now();
     let mut keyframe_requested = false;
+    
+    // Event retimer for smooth input delivery
+    let mut event_retimer = EventRetimer::new();
 
     // Per-second stats
     let mut stats_captured: u64 = 0;
@@ -276,64 +297,138 @@ async fn run_server(
     let mut stats_encode_errors: u64 = 0;
     let mut last_stats = Instant::now();
 
-    info!("Waiting for client connection...");
+    info!("Waiting for client connection (TCP for input, UDP for video)...");
 
     while running.load(Ordering::SeqCst) {
-        // Check for incoming packets
-        match tokio::time::timeout(Duration::from_millis(5), server.recv()).await {
-            Ok(Ok((data, addr))) => {
-                match decode_packet(&data) {
-                    Ok(DecodedPacket::Control(ctrl)) => {
-                        if let ControlPacket::RequestKeyframe = &ctrl {
-                            if Some(addr) == client_addr {
-                                keyframe_requested = true;
-                            }
+        tokio::select! {
+            // Accept new TCP connections
+            result = tcp_server.accept(tcp_msg_tx.clone()) => {
+                match result {
+                    Ok((client_id, addr)) => {
+                        // If there's already a client, disconnect them
+                        if let Some(old_client) = client.take() {
+                            info!("Disconnecting previous client {}", old_client.tcp_client_id);
+                            tcp_server.disconnect_client(old_client.tcp_client_id).await;
                         }
-                        handle_control_packet(&server, ctrl, addr, &mut client_addr, width, height)
-                            .await?;
-                    }
-                    Ok(DecodedPacket::Input(input)) => {
-                        if Some(addr) == client_addr {
-                            // Debug logging for input events
-                            // info!("Received input event: {:?}", input.event);
 
-                            // Update stats for buttons
-                            if let dt_protocol::InputEvent::StylusButton { button, pressed } = input.event {
-                                if button < 2 {
-                                    let mut guard = stats.lock().unwrap();
-                                    guard.stylus_buttons[button as usize] = pressed;
-                                }
-                            }
+                        // Reset retimer for new client
+                        event_retimer.reset();
 
-                            // Process input on the tablet
-                            if let Err(e) = tablet.process_event(&input.event) {
-                                warn!("Failed to process input: {}", e);
-                            }
-                        }
-                    }
-                    Ok(DecodedPacket::Video(_)) => {
-                        // Ignore video packets from clients
+                        // For now, use the TCP address as the UDP address too
+                        // (client will be on the same IP, just different port for UDP)
+                        let udp_addr = SocketAddr::new(addr.ip(), addr.port());
+
+                        client = Some(ClientState {
+                            tcp_client_id: client_id,
+                            udp_addr: Some(udp_addr),
+                        });
+
+                        info!("New client {} connected from {}", client_id, addr);
                     }
                     Err(e) => {
-                        debug!("Failed to decode packet from {}: {}", addr, e);
+                        warn!("Failed to accept TCP connection: {}", e);
                     }
                 }
             }
-            Ok(Err(e)) => {
-                error!("Network error: {}", e);
+
+            // Process TCP messages from clients
+            Some(msg) = tcp_msg_rx.recv() => {
+                // Only process messages from the current client
+                if let Some(ref mut c) = client {
+                    if msg.client_id == c.tcp_client_id {
+                        match decode_packet(&msg.data) {
+                            Ok(DecodedPacket::Control(ctrl)) => {
+                                match &ctrl {
+                                    ControlPacket::RequestKeyframe => {
+                                        keyframe_requested = true;
+                                    }
+                                    ControlPacket::Connect { version } => {
+                                        info!("Client protocol version: {}", version);
+                                        if *version != PROTOCOL_VERSION {
+                                            let nack = encode_control(&ControlPacket::ConnectNack {
+                                                reason: format!(
+                                                    "Protocol version mismatch: expected {}, got {}",
+                                                    PROTOCOL_VERSION, version
+                                                ),
+                                            })?;
+                                            let _ = tcp_server.send_to_client(c.tcp_client_id, &nack).await;
+                                            tcp_server.disconnect_client(c.tcp_client_id).await;
+                                            client = None;
+                                            continue;
+                                        }
+                                        // Send ConnectAck
+                                        let ack = encode_control(&ControlPacket::ConnectAck { width, height })?;
+                                        let _ = tcp_server.send_to_client(c.tcp_client_id, &ack).await;
+                                        info!("Client handshake complete");
+                                    }
+                                    ControlPacket::Disconnect => {
+                                        info!("Client {} requested disconnect", c.tcp_client_id);
+                                        tcp_server.disconnect_client(c.tcp_client_id).await;
+                                        event_retimer.reset();
+                                        client = None;
+                                    }
+                                    ControlPacket::Heartbeat => {
+                                        debug!("Heartbeat from client {}", c.tcp_client_id);
+                                    }
+                                    ControlPacket::SetUdpPort { port } => {
+                                        // Client tells us which UDP port to send video to
+                                        if let Some(ref mut state) = client {
+                                            if let Some(ref mut udp) = state.udp_addr {
+                                                udp.set_port(*port);
+                                                info!("Client UDP port set to {}", port);
+                                            }
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            Ok(DecodedPacket::Input(input)) => {
+                                // Update stats for buttons
+                                if let dt_protocol::InputEvent::StylusButton { button, pressed } = input.event {
+                                    if button < 2 {
+                                        let mut guard = stats.lock().unwrap();
+                                        guard.stylus_buttons[button as usize] = pressed;
+                                    }
+                                }
+
+                                // Push to retimer for smooth delivery
+                                event_retimer.push(input);
+                            }
+                            Ok(DecodedPacket::Video(_)) => {
+                                // Ignore video packets from clients
+                            }
+                            Err(e) => {
+                                debug!("Failed to decode TCP packet: {}", e);
+                            }
+                        }
+                    }
+                }
             }
-            Err(_) => {
-                // Timeout - continue processing
+
+            // Periodic tasks (encoding, sending video, stats)
+            _ = tokio::time::sleep(Duration::from_micros(100)) => {
+                // Process retimed input events
+                for packet in event_retimer.drain_ready() {
+                    if let Err(e) = tablet.process_event(&packet.event) {
+                        warn!("Failed to process input: {}", e);
+                    }
+                }
+                
+                // Check if client is still connected
+                if let Some(ref c) = client {
+                    if !tcp_server.is_client_connected(c.tcp_client_id).await {
+                        info!("Client {} disconnected", c.tcp_client_id);
+                        event_retimer.reset();
+                        client = None;
+                    }
+                }
             }
         }
 
         // Update connected client in GUI stats
-        {
-             // Only update occasionally to avoid lock contention
-             if sequence % 60 == 0 {
-                 let mut guard = stats.lock().unwrap();
-                 guard.connected_client = client_addr.map(|a| a.to_string());
-             }
+        if sequence % 60 == 0 {
+            let mut guard = stats.lock().unwrap();
+            guard.connected_client = client.as_ref().and_then(|c| c.udp_addr.map(|a| a.to_string()));
         }
 
         // Check for keyframe requests
@@ -343,15 +438,12 @@ async fn run_server(
         }
 
         // 1. Send captured frames to encoder
-        if client_addr.is_some() {
+        if client.is_some() {
             while let Some(frame) = capture.try_recv_frame() {
                 stats_captured += 1;
                 match frame_tx.try_send(frame) {
-                    Ok(_) => {
-                        // Sent successfully
-                    }
+                    Ok(_) => {}
                     Err(mpsc::TrySendError::Full(_)) => {
-                        // Encoder busy.
                         stats_dropped_frames += 1;
                     }
                     Err(_) => {
@@ -361,76 +453,78 @@ async fn run_server(
             }
         }
 
-        // 2. Process encoded packets from encoder
+        // 2. Process encoded packets from encoder and send via UDP
         while let Ok(encoded) = encoded_rx.try_recv() {
             stats_encoded += 1;
             if encoded.is_keyframe {
                 stats_keyframes += 1;
             }
 
-            if let Some(addr) = client_addr {
-                let data = &encoded.data;
-                let fragment_count =
-                    ((data.len() + MAX_FRAGMENT_DATA - 1) / MAX_FRAGMENT_DATA) as u16;
+            if let Some(ref c) = client {
+                if let Some(addr) = c.udp_addr {
+                    let data = &encoded.data;
+                    let fragment_count =
+                        ((data.len() + MAX_FRAGMENT_DATA - 1) / MAX_FRAGMENT_DATA) as u16;
 
-                // Encode all fragments first, then send in batch
-                let mut fragment_packets = Vec::with_capacity(fragment_count as usize);
-                let mut all_sent = true;
+                    let mut fragment_packets = Vec::with_capacity(fragment_count as usize);
+                    let mut all_sent = true;
 
-                for i in 0..fragment_count {
-                    let start = i as usize * MAX_FRAGMENT_DATA;
-                    let end = (start + MAX_FRAGMENT_DATA).min(data.len());
+                    for i in 0..fragment_count {
+                        let start = i as usize * MAX_FRAGMENT_DATA;
+                        let end = (start + MAX_FRAGMENT_DATA).min(data.len());
 
-                    let packet = VideoPacket {
-                        sequence,
-                        timestamp: encoded.pts,
-                        is_keyframe: encoded.is_keyframe,
-                        fragment_index: i,
-                        fragment_count,
-                        data: data[start..end].to_vec(),
-                    };
+                        let packet = VideoPacket {
+                            sequence,
+                            timestamp: encoded.pts,
+                            is_keyframe: encoded.is_keyframe,
+                            fragment_index: i,
+                            fragment_count,
+                            data: data[start..end].to_vec(),
+                        };
 
-                    match encode_video(&packet) {
-                        Ok(wire) => {
-                            fragment_packets.push(wire);
-                        }
-                        Err(e) => {
-                            warn!("Failed to encode fragment: {}", e);
-                            all_sent = false;
-                            break;
+                        match encode_video(&packet) {
+                            Ok(wire) => {
+                                fragment_packets.push(wire);
+                            }
+                            Err(e) => {
+                                warn!("Failed to encode fragment: {}", e);
+                                all_sent = false;
+                                break;
+                            }
                         }
                     }
-                }
 
-                if all_sent && !fragment_packets.is_empty() {
-                    // Send fragments with pacing to avoid network congestion
-                    const BATCH_SIZE: usize = 8;
-                    const PACING_DELAY: Duration = Duration::from_micros(100);
+                    if all_sent && !fragment_packets.is_empty() {
+                        const BATCH_SIZE: usize = 8;
+                        const PACING_DELAY: Duration = Duration::from_micros(100);
 
-                    let packet_refs: Vec<&[u8]> =
-                        fragment_packets.iter().map(|p| p.as_slice()).collect();
+                        let packet_refs: Vec<&[u8]> =
+                            fragment_packets.iter().map(|p| p.as_slice()).collect();
 
-                    for chunk in packet_refs.chunks(BATCH_SIZE) {
-                        if let Err(e) = server.send_batch(chunk, addr).await {
-                            warn!("Failed to send batch fragments: {}", e);
-                            all_sent = false;
-                            break;
+                        for chunk in packet_refs.chunks(BATCH_SIZE) {
+                            if let Err(e) = udp_server.send_batch(chunk, addr).await {
+                                warn!("Failed to send video fragments: {}", e);
+                                all_sent = false;
+                                break;
+                            }
+                            tokio::time::sleep(PACING_DELAY).await;
                         }
-                        tokio::time::sleep(PACING_DELAY).await;
                     }
-                }
-                if all_sent {
-                    stats_sent += 1;
-                    stats_fragments += fragment_count as u64;
+                    if all_sent {
+                        stats_sent += 1;
+                        stats_fragments += fragment_count as u64;
+                    }
                 }
             }
             sequence = sequence.wrapping_add(1);
         }
 
-        // Send heartbeat every second
-        if client_addr.is_some() && last_heartbeat.elapsed() > Duration::from_secs(1) {
-            let heartbeat = encode_control(&ControlPacket::Heartbeat)?;
-            let _ = server.send(&heartbeat, client_addr.unwrap()).await;
+        // Send heartbeat every second via TCP
+        if client.is_some() && last_heartbeat.elapsed() > Duration::from_secs(1) {
+            if let Some(ref c) = client {
+                let heartbeat = encode_control(&ControlPacket::Heartbeat)?;
+                let _ = tcp_server.send_to_client(c.tcp_client_id, &heartbeat).await;
+            }
             last_heartbeat = Instant::now();
         }
 
@@ -446,8 +540,8 @@ async fn run_server(
                 guard.fragments = stats_fragments;
                 guard.errors = stats_encode_errors;
             }
-            
-            if client_addr.is_some() {
+
+            if client.is_some() {
                 info!(
                     "[stats] captured={} dropped={} encoded={} sent={} keyframes={} fragments={} errors={}",
                     stats_captured,
@@ -468,71 +562,16 @@ async fn run_server(
             stats_encode_errors = 0;
             last_stats = Instant::now();
         }
-
-        tokio::time::sleep(Duration::from_micros(100)).await;
     }
 
     info!("Server stopped");
 
     // Close channel to stop encoder thread
     drop(frame_tx);
-    // Explicitly stop the encoder thread loop
     encoder_running.store(false, Ordering::SeqCst);
 
-    // Wait for the encoder thread to finish
     if let Err(e) = encoder_handle.join() {
         warn!("Failed to join encoder thread: {:?}", e);
-    }
-
-    Ok(())
-}
-
-async fn handle_control_packet(
-    server: &UdpServer,
-    packet: ControlPacket,
-    addr: SocketAddr,
-    client_addr: &mut Option<SocketAddr>,
-    width: u32,
-    height: u32,
-) -> Result<()> {
-    match packet {
-        ControlPacket::Connect { version } => {
-            info!("Connection request from {} (protocol v{})", addr, version);
-
-            if version != PROTOCOL_VERSION {
-                let nack = encode_control(&ControlPacket::ConnectNack {
-                    reason: format!(
-                        "Protocol version mismatch: expected {}, got {}",
-                        PROTOCOL_VERSION, version
-                    ),
-                })?;
-                server.send(&nack, addr).await?;
-                return Ok(());
-            }
-
-            // Accept connection
-            *client_addr = Some(addr);
-            let ack = encode_control(&ControlPacket::ConnectAck { width, height })?;
-            server.send(&ack, addr).await?;
-            info!("Client {} connected", addr);
-        }
-        ControlPacket::Disconnect => {
-            if Some(addr) == *client_addr {
-                info!("Client {} disconnected", addr);
-                *client_addr = None;
-            }
-        }
-        ControlPacket::Heartbeat => {
-            // Client is alive
-            debug!("Heartbeat from {}", addr);
-        }
-        ControlPacket::RequestKeyframe => {
-            if Some(addr) == *client_addr {
-                debug!("Keyframe requested by {}", addr);
-                // Will be handled by the main loop
-            }
-        }
-        _ => {}
     }
 
     Ok(())

@@ -5,8 +5,8 @@ use dt_protocol::InputEvent;
 /// Maximum absolute coordinate value for tablet axes.
 pub const ABS_MAX: i32 = 65535;
 
-/// Maximum pressure value.
-pub const PRESSURE_MAX: i32 = 2047;
+/// Maximum pressure value (OpenTabletDriver uses 65535 for full range).
+pub const PRESSURE_MAX: i32 = 65535;
 
 /// Maximum tilt value in degrees.
 pub const TILT_MAX: i32 = 90;

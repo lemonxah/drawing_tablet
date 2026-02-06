@@ -137,7 +137,7 @@ just android-deploy
 just run-release
 ```
 *   On first run, a "Screen Share" dialog will appear (handled by XDG Portal). Select the screen you want to mirror.
-*   The server listens on **UDP Port 9999**.
+*   The server listens on **TCP/UDP Port 9867** (TCP for input, UDP for video).
 
 ### 2. Start the Client
 1.  Open the **Drawing Tablet** app on Android.
@@ -150,6 +150,27 @@ just run-release
 *   **Touch:**
     *   **1 Finger:** Ignored (to prevent accidental drawing).
     *   **2+ Fingers:** Zoom/Pan/Rotate gestures.
+
+---
+
+## 🎨 Application Setup
+
+### Krita Configuration
+
+For the best drawing experience in Krita, you need to adjust the brush smoothing settings:
+
+1. Open Krita and select any brush tool
+2. In the **Tool Options** docker (usually on the right side), find the **Brush Smoothing** section at the bottom
+3. Change the smoothing mode from **Weighted** to **Basic** or **None**
+
+**Why?** Krita's "Weighted Smoothing" algorithm uses time-based interpolation that can cause line spikes when input events arrive with irregular timing (due to network jitter). The "Basic" smoothing mode works perfectly with this tablet.
+
+| Smoothing Mode | Compatibility |
+|:--------------|:--------------|
+| None | ✅ Works perfectly |
+| Basic | ✅ Works perfectly |
+| Weighted | ⚠️ May cause line spikes |
+| Stabilizer | ✅ Works (adds input lag) |
 
 ---
 
@@ -192,7 +213,7 @@ We use the Linux kernel's `uinput` module to create two virtual devices:
 ## ❓ Troubleshooting
 
 **Q: Connection fails immediately.**
-*   Check your firewall (`sudo ufw allow 9999/udp`).
+*   Check your firewall (`sudo ufw allow 9867/tcp` and `sudo ufw allow 9867/udp`).
 *   Ensure both devices are on the same 5GHz WiFi network.
 
 **Q: "Failed to create virtual device" error.**
@@ -204,3 +225,6 @@ We use the Linux kernel's `uinput` module to create two virtual devices:
 
 **Q: GIMP selects instead of zooming.**
 *   We filtered single-touch inputs to fix this. Ensure you are running the latest server version.
+
+**Q: Lines have random spikes/glitches in Krita.**
+*   This is caused by Krita's "Weighted Smoothing" brush setting. Change it to "Basic" or "None" in the Tool Options docker. See the [Krita Configuration](#krita-configuration) section above.

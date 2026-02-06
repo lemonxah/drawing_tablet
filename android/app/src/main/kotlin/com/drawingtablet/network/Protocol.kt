@@ -5,8 +5,9 @@ import java.nio.ByteOrder
 
 /**
  * Protocol version - must match the Rust server.
+ * Version 2: TCP for input/control, UDP for video
  */
-const val PROTOCOL_VERSION: Int = 1
+const val PROTOCOL_VERSION: Int = 2
 
 /**
  * Packet type identifiers.
@@ -85,6 +86,15 @@ sealed class InputEvent {
 }
 
 /**
+ * Input event with timestamp for proper event retiming on the server.
+ * Timestamp is in microseconds from a monotonic clock (SystemClock.uptimeMillis() * 1000).
+ */
+data class TimestampedInputEvent(
+    val timestamp: Long,  // microseconds, monotonic
+    val event: InputEvent
+)
+
+/**
  * Input packet to send to server.
  */
 data class InputPacket(
@@ -102,6 +112,8 @@ sealed class ControlPacket {
     object Heartbeat : ControlPacket()
     object RequestKeyframe : ControlPacket()
     object Disconnect : ControlPacket()
+    /** Tell the server which UDP port to send video to. */
+    data class SetUdpPort(val port: Int) : ControlPacket()
 }
 
 /**
@@ -225,6 +237,10 @@ object ProtocolCodec {
             }
             is ControlPacket.Disconnect -> {
                 buffer.putInt(5)
+            }
+            is ControlPacket.SetUdpPort -> {
+                buffer.putInt(6) // Variant index for SetUdpPort
+                buffer.putShort(packet.port.toShort())
             }
             else -> {}
         }

@@ -5,7 +5,7 @@ use dt_protocol::InputEvent;
 use evdev::{
     uinput::{VirtualDevice, VirtualDeviceBuilder},
     AbsInfo, AbsoluteAxisType, AttributeSet, BusType, EventType, InputEvent as EvdevEvent, InputId,
-    Key, PropType, Synchronization, UinputAbsSetup,
+    Key, MiscType, PropType, Synchronization, UinputAbsSetup,
 };
 use std::time::{Duration, Instant};
 use thiserror::Error;
@@ -22,10 +22,10 @@ pub struct TabletDescriptor {
 impl Default for TabletDescriptor {
     fn default() -> Self {
         Self {
-            // Emulate a Wacom Cintiq 16 for maximum compatibility, but use custom name
+            // Use generic name, no VID/PID (let kernel assign defaults)
             name: "Drawing Tablet Pen".to_string(),
-            vid: 0x056a,
-            pid: 0x0390,
+            vid: 0x0000,
+            pid: 0x0000,
         }
     }
 }
@@ -52,6 +52,8 @@ pub struct VirtualTablet {
     pen_device: VirtualDevice,
     touch_device: VirtualDevice,
     stylus_state: StylusState,
+    in_proximity: bool,
+    tool_announced: bool, // Track if we've sent the tool serial (only once per session)
     last_pen_activity: Option<Instant>,
     touch_slots: Vec<TouchSlot>,
     current_slot: u8,
@@ -97,6 +99,15 @@ impl VirtualTablet {
             AbsoluteAxisType::ABS_TILT_Y,
             AbsInfo::new(0, -TILT_MAX, TILT_MAX, 0, 0, 0),
         );
+        // Add ABS_DISTANCE (0-255) for hover detection support
+        let abs_distance = UinputAbsSetup::new(
+            AbsoluteAxisType::ABS_DISTANCE,
+            AbsInfo::new(0, 0, 255, 0, 0, 0),
+        );
+
+        // Add MSC_SERIAL to identify the tool
+        let mut msc_supported = AttributeSet::<MiscType>::new();
+        msc_supported.insert(MiscType::MSC_SERIAL);
 
         let mut pen_keys = AttributeSet::<Key>::new();
         pen_keys.insert(Key::BTN_TOOL_PEN);
@@ -105,15 +116,17 @@ impl VirtualTablet {
         pen_keys.insert(Key::BTN_STYLUS);
         pen_keys.insert(Key::BTN_STYLUS2);
 
-        // Pen Property: DIRECT (1:1 mapping)
+        // Pen Properties: DIRECT + POINTER (OpenTabletDriver style)
+        // DIRECT: Indicates direct-input device where coordinates map 1:1 to screen
+        // POINTER: Indicates device has pointer capability
+        // OTD sets both for their "Artist Tablet" mode
         let mut pen_props = AttributeSet::<PropType>::new();
         pen_props.insert(PropType::DIRECT);
+        pen_props.insert(PropType::POINTER);
 
-        // Use a Generic ID to avoid libwacom database mismatch issues
-        // Bus: USB (0x03), Vendor: 0x0000, Product: 0x0000
-        // This forces the OS to rely on the emitted capabilities (Keys/Axes) rather than
-        // looking up a specific hardware database entry.
-        let pen_id = InputId::new(BusType::BUS_USB, descriptor.vid, descriptor.pid, 0x0100);
+        // Use BUS_VIRTUAL since this is a virtual device (OTD style)
+        // This is more honest than pretending to be a USB device
+        let pen_id = InputId::new(BusType::BUS_VIRTUAL, descriptor.vid, descriptor.pid, 0x0100);
 
         let pen_device = VirtualDeviceBuilder::new()
             .map_err(TabletError::DeviceCreation)?
@@ -132,6 +145,10 @@ impl VirtualTablet {
             .with_absolute_axis(&abs_tilt_x)
             .map_err(TabletError::DeviceCreation)?
             .with_absolute_axis(&abs_tilt_y)
+            .map_err(TabletError::DeviceCreation)?
+            .with_absolute_axis(&abs_distance)
+            .map_err(TabletError::DeviceCreation)?
+            .with_msc(&msc_supported)
             .map_err(TabletError::DeviceCreation)?
             .build()
             .map_err(TabletError::DeviceCreation)?;
@@ -174,7 +191,6 @@ impl VirtualTablet {
         // touch_props.insert(PropType::POINTER);
 
         // Use the same VID/PID as the Pen device so they are associated as the same physical hardware.
-        // We use a different version (0x0002) to distinguish the virtual interface if needed.
         let touch_id = InputId::new(BusType::BUS_USB, descriptor.vid, descriptor.pid, 0x0101);
 
         let touch_device = VirtualDeviceBuilder::new()
@@ -206,6 +222,8 @@ impl VirtualTablet {
             pen_device,
             touch_device,
             stylus_state: StylusState::default(),
+            in_proximity: false,
+            tool_announced: false,
             last_pen_activity: None,
             touch_slots: (0..MT_SLOTS).map(|_| TouchSlot::default()).collect(),
             current_slot: 0,
@@ -325,6 +343,12 @@ impl VirtualTablet {
 
     fn stylus_move(&mut self, event: &InputEvent) -> Result<(), TabletError> {
         self.stylus_state.update_from_event(event);
+
+        // Ensure proximity is established first
+        if !self.in_proximity {
+            self.enter_proximity()?;
+        }
+
         self.emit_stylus_position()?;
         self.sync_pen()
     }
@@ -333,31 +357,19 @@ impl VirtualTablet {
         debug!("Stylus down");
         self.stylus_state.update_from_event(event);
 
-        // Report pen tool in proximity
+        // Ensure proximity is established first (and synced!)
+        if !self.in_proximity {
+            self.enter_proximity()?;
+        }
+
+        // Force minimum pressure to 1 to ensure Krita registers the stroke start.
+        // If pressure is 0, apps often treat it as a hover even if BTN_TOUCH is 1.
+        let pressure = self.stylus_state.pressure.max(1);
+
+        // Send BTN_TOUCH=1 and Pressure/Position in the same frame.
         self.emit_pen(&[
-            EvdevEvent::new(EventType::KEY, Key::BTN_TOOL_PEN.0, 1),
+            EvdevEvent::new(EventType::KEY, Key::BTN_TOOL_PEN.0, 1), // Re-affirm tool
             EvdevEvent::new(EventType::KEY, Key::BTN_TOUCH.0, 1),
-        ])?;
-
-        self.emit_stylus_position()?;
-        self.sync_pen()
-    }
-
-    fn stylus_up(&mut self) -> Result<(), TabletError> {
-        debug!("Stylus up");
-        self.stylus_state.is_down = false;
-        self.stylus_state.pressure = 0;
-
-        self.emit_pen(&[
-            EvdevEvent::new(EventType::KEY, Key::BTN_TOUCH.0, 0),
-            EvdevEvent::new(EventType::ABSOLUTE, AbsoluteAxisType::ABS_PRESSURE.0, 0),
-        ])?;
-        self.sync_pen()
-    }
-
-    fn emit_stylus_position(&mut self) -> Result<(), TabletError> {
-        self.emit_pen(&[
-            EvdevEvent::new(EventType::KEY, Key::BTN_TOOL_PEN.0, 1),
             EvdevEvent::new(
                 EventType::ABSOLUTE,
                 AbsoluteAxisType::ABS_X.0,
@@ -371,7 +383,123 @@ impl VirtualTablet {
             EvdevEvent::new(
                 EventType::ABSOLUTE,
                 AbsoluteAxisType::ABS_PRESSURE.0,
-                self.stylus_state.pressure,
+                pressure,
+            ),
+            // Distance = 0 for touch
+            EvdevEvent::new(EventType::ABSOLUTE, AbsoluteAxisType::ABS_DISTANCE.0, 0),
+            EvdevEvent::new(
+                EventType::ABSOLUTE,
+                AbsoluteAxisType::ABS_TILT_X.0,
+                self.stylus_state.tilt_x,
+            ),
+            EvdevEvent::new(
+                EventType::ABSOLUTE,
+                AbsoluteAxisType::ABS_TILT_Y.0,
+                self.stylus_state.tilt_y,
+            ),
+        ])?;
+        self.sync_pen()
+        // We stay in_proximity = true because the pen is likely still hovering
+    }
+
+    fn stylus_up(&mut self) -> Result<(), TabletError> {
+        debug!("Stylus up");
+        self.stylus_state.is_down = false;
+        self.stylus_state.pressure = 0;
+
+        self.emit_pen(&[
+            EvdevEvent::new(EventType::KEY, Key::BTN_TOUCH.0, 0),
+            EvdevEvent::new(EventType::ABSOLUTE, AbsoluteAxisType::ABS_PRESSURE.0, 0),
+        ])?;
+        self.sync_pen()
+        // We stay in_proximity = true because the pen is likely still hovering
+    }
+
+    fn enter_proximity(&mut self) -> Result<(), TabletError> {
+        debug!(
+            "Stylus entering proximity (tool_announced={})",
+            self.tool_announced
+        );
+
+        // Use a realistic serial number for the pen tool.
+        // Wacom uses unique serials per physical pen - we use a fixed one.
+        // The serial helps apps (like Krita) identify and track individual tools.
+        // IMPORTANT: Only send MSC_SERIAL ONCE per session to avoid creating duplicate
+        // tablet_tool objects in the Wayland compositor (zwp_tablet_v2 protocol).
+        const PEN_SERIAL: i32 = 0x12345678;
+
+        let mut events = vec![EvdevEvent::new(EventType::KEY, Key::BTN_TOOL_PEN.0, 1)];
+
+        // Only send serial on first proximity to register the tool once
+        if !self.tool_announced {
+            events.push(EvdevEvent::new(
+                EventType::MISC,
+                MiscType::MSC_SERIAL.0,
+                PEN_SERIAL,
+            ));
+            self.tool_announced = true;
+            info!("Announcing tablet tool with serial {:08x}", PEN_SERIAL);
+        }
+
+        // Include current coordinates so the tool appears at the right spot immediately
+        events.extend([
+            EvdevEvent::new(
+                EventType::ABSOLUTE,
+                AbsoluteAxisType::ABS_X.0,
+                self.stylus_state.x,
+            ),
+            EvdevEvent::new(
+                EventType::ABSOLUTE,
+                AbsoluteAxisType::ABS_Y.0,
+                self.stylus_state.y,
+            ),
+            EvdevEvent::new(
+                EventType::ABSOLUTE,
+                AbsoluteAxisType::ABS_DISTANCE.0,
+                10, // Hovering
+            ),
+        ]);
+
+        self.emit_pen(&events)?;
+        self.sync_pen()?;
+        self.in_proximity = true;
+        Ok(())
+    }
+
+    fn emit_stylus_position(&mut self) -> Result<(), TabletError> {
+        // Just emit position/pressure updates.
+        // We DO NOT re-emit BTN_TOOL_PEN or MSC_SERIAL here to keep the event stream clean.
+
+        // IMPORTANT: Force pressure to 0 when hovering (!is_down) to prevent false strokes.
+        // This is a safety net in case the client sends non-zero pressure during hover.
+        // Krita and other apps interpret any pressure > 0 as drawing intent.
+        let pressure = if self.stylus_state.is_down {
+            self.stylus_state.pressure
+        } else {
+            0
+        };
+
+        self.emit_pen(&[
+            EvdevEvent::new(
+                EventType::ABSOLUTE,
+                AbsoluteAxisType::ABS_X.0,
+                self.stylus_state.x,
+            ),
+            EvdevEvent::new(
+                EventType::ABSOLUTE,
+                AbsoluteAxisType::ABS_Y.0,
+                self.stylus_state.y,
+            ),
+            EvdevEvent::new(
+                EventType::ABSOLUTE,
+                AbsoluteAxisType::ABS_PRESSURE.0,
+                pressure,
+            ),
+            // If touching, Distance is 0. If hovering, it's > 0 (e.g., 10).
+            EvdevEvent::new(
+                EventType::ABSOLUTE,
+                AbsoluteAxisType::ABS_DISTANCE.0,
+                if self.stylus_state.is_down { 0 } else { 10 },
             ),
             EvdevEvent::new(
                 EventType::ABSOLUTE,
@@ -398,11 +526,17 @@ impl VirtualTablet {
             _ => return Ok(()), // Ignore unknown buttons
         };
 
-        // Ensure we report the tool as active (Proximity) when a button is pressed
-        self.emit_pen(&[
-            EvdevEvent::new(EventType::KEY, key.0, if pressed { 1 } else { 0 }),
-            EvdevEvent::new(EventType::KEY, Key::BTN_TOOL_PEN.0, 1),
-        ])?;
+        // Ensure proximity is established first (this will announce the tool if needed)
+        if !self.in_proximity {
+            self.enter_proximity()?;
+        }
+
+        // Just send the button state - no need to re-send BTN_TOOL_PEN or MSC_SERIAL
+        self.emit_pen(&[EvdevEvent::new(
+            EventType::KEY,
+            key.0,
+            if pressed { 1 } else { 0 },
+        )])?;
         self.sync_pen()
     }
 
@@ -589,10 +723,10 @@ impl VirtualTablet {
     }
 
     fn update_touch_tools(&mut self, count: usize) -> Result<(), TabletError> {
-        let finger = if count == 1 { 1 } else { 0 };
-        let double = if count == 2 { 1 } else { 0 };
-        let triple = if count == 3 { 1 } else { 0 };
-        let quad = if count >= 4 { 1 } else { 0 };
+        let _finger = if count == 1 { 1 } else { 0 };
+        let _double = if count == 2 { 1 } else { 0 };
+        let _triple = if count == 3 { 1 } else { 0 };
+        let _quad = if count >= 4 { 1 } else { 0 };
 
         /*
         self.emit_touch(&[

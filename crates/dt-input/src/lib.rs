@@ -5,8 +5,10 @@
 
 mod events;
 mod gesture;
+mod retimer;
 mod tablet;
 
 pub use events::*;
 pub use gesture::*;
+pub use retimer::EventRetimer;
 pub use tablet::{TabletDescriptor, VirtualTablet};

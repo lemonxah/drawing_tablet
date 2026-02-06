@@ -3,7 +3,8 @@
 use serde::{Deserialize, Serialize};
 
 /// Protocol version for compatibility checking.
-pub const PROTOCOL_VERSION: u32 = 1;
+/// Version 2: TCP for input/control, UDP for video
+pub const PROTOCOL_VERSION: u32 = 2;
 
 /// Maximum framed packet size (constrained by the u16 length field).
 pub const MAX_PACKET_SIZE: usize = 65535;
@@ -113,9 +114,13 @@ pub enum InputEvent {
 }
 
 /// Control packets for connection management.
+///
+/// In protocol v2:
+/// - Control and Input packets are sent over TCP (reliable, ordered)
+/// - Video packets are sent over UDP (low latency)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ControlPacket {
-    /// Client requests connection.
+    /// Client requests connection (sent over TCP).
     Connect {
         /// Protocol version.
         version: u32,
@@ -135,6 +140,9 @@ pub enum ControlPacket {
     RequestKeyframe,
     /// Graceful disconnect.
     Disconnect,
+    /// Client tells server which UDP port to send video to.
+    /// This allows the client to use a different port for receiving video.
+    SetUdpPort { port: u16 },
 }
 
 /// A framed packet ready for transmission.

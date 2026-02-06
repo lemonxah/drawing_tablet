@@ -14,17 +14,20 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.drawingtablet.network.ConnectionState
 import com.drawingtablet.network.ServiceDiscovery
-import com.drawingtablet.network.UdpClient
+import com.drawingtablet.network.NetworkClient
 import com.drawingtablet.ui.ConnectionScreen
 import com.drawingtablet.ui.StreamScreen
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
-    private var client: UdpClient? = null
+    private var client: NetworkClient? = null
     private lateinit var serviceDiscovery: ServiceDiscovery
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Switch from splash theme to regular theme
+        setTheme(R.style.Theme_DrawingTablet)
         super.onCreate(savedInstanceState)
+        
         serviceDiscovery = ServiceDiscovery(this)
         serviceDiscovery.start()
 
@@ -59,7 +62,7 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     fun DrawingTabletApp() {
-        var currentClient by remember { mutableStateOf<UdpClient?>(null) }
+        var currentClient by remember { mutableStateOf<NetworkClient?>(null) }
         val connectionState by currentClient?.connectionState?.collectAsState()
             ?: remember { mutableStateOf(ConnectionState.Disconnected) }
         val discoveredServers by serviceDiscovery.servers.collectAsState()
@@ -76,7 +79,7 @@ class MainActivity : ComponentActivity() {
             currentClient?.close()
 
             // Create new client and connect
-            val newClient = UdpClient(address, port)
+            val newClient = NetworkClient(address, port)
             currentClient = newClient
             client = newClient
 

@@ -28,7 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.drawingtablet.input.InputCapture
-import com.drawingtablet.network.UdpClient
+import com.drawingtablet.network.NetworkClient
 import com.drawingtablet.network.VideoPacket
 import com.drawingtablet.video.VideoDecoder
 import kotlinx.coroutines.channels.Channel
@@ -36,7 +36,7 @@ import kotlinx.coroutines.channels.Channel
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun StreamScreen(
-    client: UdpClient,
+    client: NetworkClient,
     videoPackets: Channel<VideoPacket>,
     width: Int,
     height: Int,
