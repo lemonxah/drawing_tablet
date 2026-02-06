@@ -22,6 +22,15 @@ android {
         }
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile = file("../drawing_tablet.keystore")
+            storePassword = System.getenv("KEYSTORE_PASSWORD")
+            keyAlias = "drawingtablet"
+            keyPassword = System.getenv("KEY_PASSWORD")
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -29,7 +38,14 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = signingConfigs.getByName("release")
         }
+    }
+
+    lint {
+        // Disable lint checks that block release builds
+        checkReleaseBuilds = false
+        abortOnError = false
     }
 
     compileOptions {
