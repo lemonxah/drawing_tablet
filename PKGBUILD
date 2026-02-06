@@ -1,5 +1,5 @@
 # Maintainer: lemonxah <lemonxah@gmail.com>
-pkgname=drawing-tablet-server
+pkgname=drawing-tablet
 pkgver=0.1.0
 pkgrel=1
 pkgdesc="Stream your desktop to an Android tablet and use it as a drawing tablet"
@@ -30,8 +30,6 @@ optdepends=(
     'libva-mesa-driver: AMD VA-API support'
 )
 source=("$pkgname-$pkgver.tar.gz::$url/archive/v$pkgver.tar.gz")
-# For git-based installs, use:
-# source=("git+$url.git")
 sha256sums=('SKIP')
 
 prepare() {
@@ -57,13 +55,13 @@ package() {
     cd "drawing_tablet-$pkgver"
     
     # Install binary
-    install -Dm755 "target/release/dt-server" "$pkgdir/usr/bin/drawing-tablet-server"
+    install -Dm755 "target/release/dt-server" "$pkgdir/usr/bin/drawing-tablet"
     
     # Install desktop file
-    install -Dm644 "pkg/drawing-tablet-server.desktop" "$pkgdir/usr/share/applications/drawing-tablet-server.desktop"
+    install -Dm644 "pkg/drawing-tablet.desktop" "$pkgdir/usr/share/applications/drawing-tablet.desktop"
     
     # Install icon
-    install -Dm644 "crates/dt-server/assets/icon.png" "$pkgdir/usr/share/icons/hicolor/256x256/apps/drawing-tablet-server.png"
+    install -Dm644 "crates/dt-server/assets/icon.png" "$pkgdir/usr/share/icons/hicolor/256x256/apps/drawing-tablet.png"
     
     # Install license
     install -Dm644 "LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"

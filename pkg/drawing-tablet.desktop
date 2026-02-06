@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Drawing Tablet
+Comment=Stream your desktop to an Android tablet and use it as a drawing tablet
+GenericName=Drawing Tablet
+Exec=drawing-tablet
+Icon=drawing-tablet
+Terminal=false
+Type=Application
+Categories=Graphics;Utility;
+Keywords=tablet;drawing;wacom;stream;stylus;art;
+StartupNotify=true

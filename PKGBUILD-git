@@ -1,6 +1,6 @@
 # Maintainer: lemonxah <lemonxah@gmail.com>
 # This PKGBUILD builds from the latest git commit
-pkgname=drawing-tablet-server-git
+pkgname=drawing-tablet-git
 pkgver=0.1.0.r0.g0000000
 pkgrel=1
 pkgdesc="Stream your desktop to an Android tablet and use it as a drawing tablet (git version)"
@@ -64,13 +64,13 @@ package() {
     cd "drawing_tablet"
     
     # Install binary
-    install -Dm755 "target/release/dt-server" "$pkgdir/usr/bin/drawing-tablet-server"
+    install -Dm755 "target/release/dt-server" "$pkgdir/usr/bin/drawing-tablet"
     
     # Install desktop file
-    install -Dm644 "pkg/drawing-tablet-server.desktop" "$pkgdir/usr/share/applications/drawing-tablet-server.desktop"
+    install -Dm644 "pkg/drawing-tablet.desktop" "$pkgdir/usr/share/applications/drawing-tablet.desktop"
     
     # Install icon
-    install -Dm644 "crates/dt-server/assets/icon.png" "$pkgdir/usr/share/icons/hicolor/256x256/apps/drawing-tablet-server.png"
+    install -Dm644 "crates/dt-server/assets/icon.png" "$pkgdir/usr/share/icons/hicolor/256x256/apps/drawing-tablet.png"
     
     # Install license
     install -Dm644 "LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
