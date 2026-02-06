@@ -1,0 +1,53 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/dt-protocol",
+    "crates/dt-input",
+    "crates/dt-capture",
+    "crates/dt-encoder",
+    "crates/dt-server",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["Drawing Tablet Contributors"]
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+bincode = "1"
+
+# Input injection
+evdev = "0.12"
+
+# Screen capture
+ashpd = { version = "0.10", default-features = false, features = ["tokio"] }
+pipewire = "0.8"
+libspa = "0.8"
+libspa-sys = "0.8"
+libc = "0.2"
+
+# Video encoding
+gstreamer = "0.23"
+gstreamer-video = "0.23"
+gstreamer-app = "0.23"
+gstreamer-allocators = "0.23"
+
+# Error handling
+anyhow = "1"
+thiserror = "1"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Internal crates
+dt-protocol = { path = "crates/dt-protocol" }
+dt-input = { path = "crates/dt-input" }
+dt-capture = { path = "crates/dt-capture" }
+dt-encoder = { path = "crates/dt-encoder" }

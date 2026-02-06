@@ -1,0 +1,20 @@
+[package]
+name = "dt-capture"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Screen capture using PipeWire and XDG Desktop Portal"
+
+[dependencies]
+ashpd = { workspace = true }
+pipewire = { workspace = true }
+tokio = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+libc = { workspace = true }
+errno = "0.3"
+drm-fourcc = "2.2.0"
+libspa = { workspace = true }
+libspa-sys = { workspace = true }
+
+

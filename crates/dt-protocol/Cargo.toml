@@ -1,0 +1,11 @@
+[package]
+name = "dt-protocol"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Protocol definitions for drawing tablet streaming"
+
+[dependencies]
+serde = { workspace = true }
+bincode = { workspace = true }
+thiserror = { workspace = true }

@@ -1,0 +1,23 @@
+[package]
+name = "dt-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Drawing tablet streaming server"
+
+[[bin]]
+name = "dt-server"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+dt-protocol = { workspace = true }
+dt-input = { workspace = true }
+dt-capture = { workspace = true }
+dt-encoder = { workspace = true }
+eframe = "0.33.3"
+chrono = "0.4.43"

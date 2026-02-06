@@ -1,0 +1,18 @@
+[package]
+name = "dt-encoder"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Video encoding using GStreamer with VA-API hardware acceleration"
+
+[dependencies]
+gstreamer = { workspace = true }
+gstreamer-video = { workspace = true }
+gstreamer-app = { workspace = true }
+gstreamer-allocators = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+libc = { workspace = true }
+
+dt-capture = { workspace = true }
+
