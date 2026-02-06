@@ -20,4 +20,5 @@ dt-input = { workspace = true }
 dt-capture = { workspace = true }
 dt-encoder = { workspace = true }
 eframe = "0.33.3"
+image = { version = "0.24", default-features = false, features = ["png"] }
 chrono = "0.4.43"

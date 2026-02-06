@@ -11,6 +11,29 @@ use std::time::{Duration, Instant};
 use thiserror::Error;
 use tracing::{debug, info};
 
+/// Configuration for the virtual tablet device identity.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TabletDescriptor {
+    pub name: String,
+    pub vid: u16,
+    pub pid: u16,
+}
+
+impl Default for TabletDescriptor {
+    fn default() -> Self {
+        Self {
+            // Emulate a Wacom Cintiq 16 for maximum compatibility, but use custom name
+            name: "Drawing Tablet Pen".to_string(),
+            vid: 0x056a,
+            pid: 0x0390,
+        }
+    }
+}
+
+impl TabletDescriptor {
+    // Presets removed as we are standardizing on "Drawing Tablet Pen"
+}
+
 /// Errors that can occur when creating or using a virtual tablet.
 #[derive(Debug, Error)]
 pub enum TabletError {
@@ -40,8 +63,15 @@ impl VirtualTablet {
     /// Create a new virtual tablet system (Pen + Touchpad).
     ///
     /// The width and height define the coordinate space for input mapping.
-    pub fn new(width: u32, height: u32) -> Result<Self, TabletError> {
-        info!("Creating virtual tablet devices ({}x{})", width, height);
+    pub fn new(
+        width: u32,
+        height: u32,
+        descriptor: &TabletDescriptor,
+    ) -> Result<Self, TabletError> {
+        info!(
+            "Creating virtual tablet devices ({}x{}) as '{}' (VID: {:04x}, PID: {:04x})",
+            width, height, descriptor.name, descriptor.vid, descriptor.pid
+        );
 
         // --- Device 1: Pen (Stylus) ---
         // 65535 / 200mm = ~327 resolution.
@@ -70,6 +100,7 @@ impl VirtualTablet {
 
         let mut pen_keys = AttributeSet::<Key>::new();
         pen_keys.insert(Key::BTN_TOOL_PEN);
+        pen_keys.insert(Key::BTN_TOOL_RUBBER); // Eraser support
         pen_keys.insert(Key::BTN_TOUCH); // Often needed for pen contact
         pen_keys.insert(Key::BTN_STYLUS);
         pen_keys.insert(Key::BTN_STYLUS2);
@@ -82,11 +113,11 @@ impl VirtualTablet {
         // Bus: USB (0x03), Vendor: 0x0000, Product: 0x0000
         // This forces the OS to rely on the emitted capabilities (Keys/Axes) rather than
         // looking up a specific hardware database entry.
-        let pen_id = InputId::new(BusType::BUS_USB, 0x0000, 0x0000, 0x0000);
+        let pen_id = InputId::new(BusType::BUS_USB, descriptor.vid, descriptor.pid, 0x0100);
 
         let pen_device = VirtualDeviceBuilder::new()
             .map_err(TabletError::DeviceCreation)?
-            .name("Drawing Tablet Pen")
+            .name(&descriptor.name)
             .input_id(pen_id)
             .with_keys(&pen_keys)
             .map_err(TabletError::DeviceCreation)?
@@ -124,23 +155,31 @@ impl VirtualTablet {
             AbsInfo::new(0, 0, ABS_MAX, 0, 0, resolution),
         );
 
-        let mut touch_keys = AttributeSet::<Key>::new();
-        touch_keys.insert(Key::BTN_TOUCH);
-        touch_keys.insert(Key::BTN_TOOL_FINGER);
-        touch_keys.insert(Key::BTN_TOOL_DOUBLETAP);
-        touch_keys.insert(Key::BTN_TOOL_TRIPLETAP);
-        touch_keys.insert(Key::BTN_TOOL_QUADTAP);
+        // Legacy Single-Touch Axes REMOVED
+        // We previously added ABS_X/ABS_Y to help GIMP detection, but this causes the OS
+        // to treat the device as a "Core Pointer" (Mouse), forcing mouse emulation (selection)
+        // even when Touch is disabled. We revert to pure Multitouch to avoid this.
 
-        // Touch Property: DIRECT (Absolute/Touchscreen behavior)
+        let mut touch_keys = AttributeSet::<Key>::new();
+        // REMOVED ALL BUTTONS TO PREVENT "TOOL" CLASSIFICATION
+        // touch_keys.insert(Key::BTN_LEFT);
+        // touch_keys.insert(Key::BTN_TOOL_FINGER);
+        // touch_keys.insert(Key::BTN_TOOL_DOUBLETAP);
+        // touch_keys.insert(Key::BTN_TOOL_TRIPLETAP);
+        // touch_keys.insert(Key::BTN_TOOL_QUADTAP);
+
+        // Touch Property: DIRECT (Touchscreen behavior)
         let mut touch_props = AttributeSet::<PropType>::new();
         touch_props.insert(PropType::DIRECT);
+        // touch_props.insert(PropType::POINTER);
 
-        // Same ID as pen to hopefully share mapping logic or at least be generic
-        let touch_id = InputId::new(BusType::BUS_USB, 0x0000, 0x0001, 0x0000);
+        // Use the same VID/PID as the Pen device so they are associated as the same physical hardware.
+        // We use a different version (0x0002) to distinguish the virtual interface if needed.
+        let touch_id = InputId::new(BusType::BUS_USB, descriptor.vid, descriptor.pid, 0x0101);
 
         let touch_device = VirtualDeviceBuilder::new()
             .map_err(TabletError::DeviceCreation)?
-            .name("Drawing Tablet Touchscreen")
+            .name("Drawing Tablet Touch")
             .input_id(touch_id)
             .with_keys(&touch_keys)
             .map_err(TabletError::DeviceCreation)?
@@ -154,6 +193,10 @@ impl VirtualTablet {
             .map_err(TabletError::DeviceCreation)?
             .with_absolute_axis(&mt_position_y)
             .map_err(TabletError::DeviceCreation)?
+            // .with_absolute_axis(&abs_x_legacy) // REMOVED
+            // .map_err(TabletError::DeviceCreation)?
+            // .with_absolute_axis(&abs_y_legacy) // REMOVED
+            // .map_err(TabletError::DeviceCreation)?
             .build()
             .map_err(TabletError::DeviceCreation)?;
 
@@ -181,7 +224,7 @@ impl VirtualTablet {
         // Simple Palm Rejection:
         // If the pen has been active recently (hovering or touching), ignore all touch input.
         // This prevents palm touches while writing.
-        const PALM_REJECTION_TIMEOUT: Duration = Duration::from_millis(500);
+        const PALM_REJECTION_TIMEOUT: Duration = Duration::from_millis(1000);
 
         match event {
             InputEvent::StylusMove { .. }
@@ -274,7 +317,7 @@ impl VirtualTablet {
             EvdevEvent::new(EventType::KEY, Key::BTN_TOOL_DOUBLETAP.0, 0),
             EvdevEvent::new(EventType::KEY, Key::BTN_TOOL_TRIPLETAP.0, 0),
             EvdevEvent::new(EventType::KEY, Key::BTN_TOOL_QUADTAP.0, 0),
-            EvdevEvent::new(EventType::KEY, Key::BTN_TOUCH.0, 0),
+            // EvdevEvent::new(EventType::KEY, Key::BTN_TOUCH.0, 0), // Removed
         ])?;
 
         self.sync_touch()
@@ -378,58 +421,32 @@ impl VirtualTablet {
     }
 
     fn touch_down(&mut self, id: u32, x: f32, y: f32) -> Result<(), TabletError> {
-        let slot = match self.find_free_slot() {
+        let slot_idx = match self.find_free_slot() {
             Some(s) => s,
             None => return Ok(()), // No free slots, ignore
         };
 
-        debug!("Touch down: id={} slot={} pos=({}, {})", id, slot, x, y);
+        debug!(
+            "Touch down (Internal): id={} slot={} pos=({}, {})",
+            id, slot_idx, x, y
+        );
 
         let abs_x = normalize_to_abs(x, ABS_MAX);
         let abs_y = normalize_to_abs(y, ABS_MAX);
 
-        self.touch_slots[slot as usize] = TouchSlot {
+        self.touch_slots[slot_idx as usize] = TouchSlot {
             tracking_id: id as i32,
             x: abs_x,
             y: abs_y,
             active: true,
+            reported_to_os: false,
         };
 
-        // Determine number of active contacts for BTN_TOOL_*
-        let active_contacts = self.touch_slots.iter().filter(|s| s.active).count();
-
-        self.select_slot(slot)?;
-        self.emit_touch(&[
-            EvdevEvent::new(
-                EventType::ABSOLUTE,
-                AbsoluteAxisType::ABS_MT_TRACKING_ID.0,
-                id as i32,
-            ),
-            EvdevEvent::new(
-                EventType::ABSOLUTE,
-                AbsoluteAxisType::ABS_MT_POSITION_X.0,
-                abs_x,
-            ),
-            EvdevEvent::new(
-                EventType::ABSOLUTE,
-                AbsoluteAxisType::ABS_MT_POSITION_Y.0,
-                abs_y,
-            ),
-        ])?;
-
-        // Update BTN_TOOL_* based on contact count
-        self.update_touch_tools(active_contacts)?;
-
-        // Also emit BTN_TOUCH if this is the first finger
-        if active_contacts == 1 {
-            self.emit_touch(&[EvdevEvent::new(EventType::KEY, Key::BTN_TOUCH.0, 1)])?;
-        }
-
-        self.sync_touch()
+        self.sync_touch_state_to_os()
     }
 
     fn touch_move(&mut self, id: u32, x: f32, y: f32) -> Result<(), TabletError> {
-        let slot = match self.find_slot_for_id(id) {
+        let slot_idx = match self.find_slot_for_id(id) {
             Some(s) => s,
             None => return Ok(()), // Unknown touch, ignore
         };
@@ -437,55 +454,138 @@ impl VirtualTablet {
         let abs_x = normalize_to_abs(x, ABS_MAX);
         let abs_y = normalize_to_abs(y, ABS_MAX);
 
-        self.touch_slots[slot as usize].x = abs_x;
-        self.touch_slots[slot as usize].y = abs_y;
+        self.touch_slots[slot_idx as usize].x = abs_x;
+        self.touch_slots[slot_idx as usize].y = abs_y;
 
-        self.select_slot(slot)?;
-        self.emit_touch(&[
-            EvdevEvent::new(
-                EventType::ABSOLUTE,
-                AbsoluteAxisType::ABS_MT_POSITION_X.0,
-                abs_x,
-            ),
-            EvdevEvent::new(
-                EventType::ABSOLUTE,
-                AbsoluteAxisType::ABS_MT_POSITION_Y.0,
-                abs_y,
-            ),
-        ])?;
-
-        self.sync_touch()
+        self.sync_touch_state_to_os()
     }
 
     fn touch_up(&mut self, id: u32) -> Result<(), TabletError> {
-        let slot = match self.find_slot_for_id(id) {
+        let slot_idx = match self.find_slot_for_id(id) {
             Some(s) => s,
             None => return Ok(()), // Unknown touch, ignore
         };
 
-        debug!("Touch up: id={} slot={}", id, slot);
+        debug!("Touch up (Internal): id={} slot={}", id, slot_idx);
 
-        self.touch_slots[slot as usize].active = false;
+        self.touch_slots[slot_idx as usize].active = false;
 
-        // Determine number of active contacts for BTN_TOOL_*
-        let active_contacts = self.touch_slots.iter().filter(|s| s.active).count();
+        // We do NOT reset reported_to_os here, because sync_touch_state_to_os
+        // needs to see that it WAS reported so it can correctly send the Lift event (Tracking ID -1).
 
-        self.select_slot(slot)?;
-        self.emit_touch(&[EvdevEvent::new(
-            EventType::ABSOLUTE,
-            AbsoluteAxisType::ABS_MT_TRACKING_ID.0,
-            -1,
-        )])?;
+        self.sync_touch_state_to_os()
+    }
 
-        // Update BTN_TOOL_* based on contact count
-        self.update_touch_tools(active_contacts)?;
+    /// Sync the internal touch slot state to the OS
+    fn sync_touch_state_to_os(&mut self) -> Result<(), TabletError> {
+        let mut something_changed = false;
 
-        // If no fingers left, release BTN_TOUCH
-        if active_contacts == 0 {
-            self.emit_touch(&[EvdevEvent::new(EventType::KEY, Key::BTN_TOUCH.0, 0)])?;
+        // Iterate all slots and sync changes
+        for i in 0..MT_SLOTS {
+            // Extract state needed for decision
+            let (is_active_internal, tracking_id, x, y, reported) = {
+                let s = &self.touch_slots[i as usize];
+                (s.active, s.tracking_id, s.x, s.y, s.reported_to_os)
+            };
+
+            // In Direct/Touchscreen mode, we report everything active
+            let want_active_os = is_active_internal;
+
+            // --- GESTURE-ONLY FILTER ---
+            // Only report to OS if we have at least 2 active touches internally
+            // This prevents single-finger interactions (like drawing/selecting) from leaking through.
+            let active_internal_count = self.touch_slots.iter().filter(|s| s.active).count();
+            if active_internal_count < 2 {
+                // Force everything to be HIDDEN if less than 2 fingers
+                if reported {
+                    // SHOWING -> HIDDEN
+                    self.select_slot(i)?;
+                    self.emit_touch(&[EvdevEvent::new(
+                        EventType::ABSOLUTE,
+                        AbsoluteAxisType::ABS_MT_TRACKING_ID.0,
+                        -1,
+                    )])?;
+                    self.touch_slots[i as usize].reported_to_os = false;
+                    something_changed = true;
+                }
+                continue; // Skip the rest of the loop for this slot
+            }
+
+            // Legacy ABS_X/ABS_Y removed to prevent mouse emulation
+
+            if !reported && want_active_os {
+                // HIDDEN -> SHOWING
+                self.select_slot(i)?;
+                self.emit_touch(&[
+                    EvdevEvent::new(
+                        EventType::ABSOLUTE,
+                        AbsoluteAxisType::ABS_MT_TRACKING_ID.0,
+                        tracking_id,
+                    ),
+                    EvdevEvent::new(
+                        EventType::ABSOLUTE,
+                        AbsoluteAxisType::ABS_MT_POSITION_X.0,
+                        x,
+                    ),
+                    EvdevEvent::new(
+                        EventType::ABSOLUTE,
+                        AbsoluteAxisType::ABS_MT_POSITION_Y.0,
+                        y,
+                    ),
+                ])?;
+                self.touch_slots[i as usize].reported_to_os = true;
+                something_changed = true;
+            } else if reported && !want_active_os {
+                // SHOWING -> HIDDEN
+                self.select_slot(i)?;
+                self.emit_touch(&[EvdevEvent::new(
+                    EventType::ABSOLUTE,
+                    AbsoluteAxisType::ABS_MT_TRACKING_ID.0,
+                    -1,
+                )])?;
+                self.touch_slots[i as usize].reported_to_os = false;
+                something_changed = true;
+            } else if reported && want_active_os {
+                // SHOWING -> SHOWING (Update Position)
+                self.select_slot(i)?;
+                self.emit_touch(&[
+                    EvdevEvent::new(
+                        EventType::ABSOLUTE,
+                        AbsoluteAxisType::ABS_MT_POSITION_X.0,
+                        x,
+                    ),
+                    EvdevEvent::new(
+                        EventType::ABSOLUTE,
+                        AbsoluteAxisType::ABS_MT_POSITION_Y.0,
+                        y,
+                    ),
+                ])?;
+                something_changed = true;
+            }
         }
 
-        self.sync_touch()
+        if something_changed {
+            // Calculate how many slots are NOW reported to OS
+            let reported_count = self.touch_slots.iter().filter(|s| s.reported_to_os).count();
+
+            self.update_touch_tools(reported_count)?;
+
+            // BTN_TOUCH logic:
+            // For a "Touchscreen", BTN_TOUCH should be 1 if ANY finger is down.
+            // REMOVED: To prevent mouse emulation. We rely on ABS_MT_TRACKING_ID and BTN_TOOL_*
+            /*
+            let btn_touch_value = if reported_count > 0 { 1 } else { 0 };
+            self.emit_touch(&[EvdevEvent::new(
+                EventType::KEY,
+                Key::BTN_TOUCH.0,
+                btn_touch_value,
+            )])?;
+            */
+
+            self.sync_touch()?;
+        }
+
+        Ok(())
     }
 
     fn update_touch_tools(&mut self, count: usize) -> Result<(), TabletError> {
@@ -494,12 +594,15 @@ impl VirtualTablet {
         let triple = if count == 3 { 1 } else { 0 };
         let quad = if count >= 4 { 1 } else { 0 };
 
+        /*
         self.emit_touch(&[
             EvdevEvent::new(EventType::KEY, Key::BTN_TOOL_FINGER.0, finger),
             EvdevEvent::new(EventType::KEY, Key::BTN_TOOL_DOUBLETAP.0, double),
             EvdevEvent::new(EventType::KEY, Key::BTN_TOOL_TRIPLETAP.0, triple),
             EvdevEvent::new(EventType::KEY, Key::BTN_TOOL_QUADTAP.0, quad),
         ])
+        */
+        Ok(())
     }
 
     fn select_slot(&mut self, slot: u8) -> Result<(), TabletError> {
@@ -535,7 +638,15 @@ impl VirtualTablet {
     }
 
     fn emit_touch(&mut self, events: &[EvdevEvent]) -> Result<(), TabletError> {
-        tracing::debug!("Emitting touch events: {:?}", events);
+        // tracing::debug!("Emitting touch events: {:?}", events);
+        for event in events {
+            tracing::debug!(
+                "TOUCH EMIT: Type={:?} Code={} Value={}",
+                event.kind(),
+                event.code(),
+                event.value()
+            );
+        }
         self.touch_device
             .emit(events)
             .map_err(TabletError::EventEmit)

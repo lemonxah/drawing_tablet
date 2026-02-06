@@ -21,11 +21,12 @@ import com.drawingtablet.network.DiscoveredServer
 fun ConnectionScreen(
     connectionState: ConnectionState,
     discoveredServers: List<DiscoveredServer>,
-    onConnect: (String, Int) -> Unit,
+    onConnect: (String, Int, Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val isConnecting = connectionState is ConnectionState.Connecting
     val errorMessage = (connectionState as? ConnectionState.Error)?.message
+    var rememberServer by remember { mutableStateOf(false) }
 
     Box(
         modifier = modifier
@@ -97,9 +98,36 @@ fun ConnectionScreen(
                         ServerCard(
                             server = server,
                             enabled = !isConnecting,
-                            onClick = { onConnect(server.host, server.port) }
+                            onClick = { onConnect(server.host, server.port, rememberServer) }
                         )
                     }
+                }
+                
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Remember Checkbox
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { rememberServer = !rememberServer },
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Checkbox(
+                        checked = rememberServer,
+                        onCheckedChange = { rememberServer = it },
+                        colors = CheckboxDefaults.colors(
+                            checkedColor = Color(0xFFE94560),
+                            uncheckedColor = Color.Gray,
+                            checkmarkColor = Color.White
+                        )
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Remember this server (Auto-connect)",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.LightGray
+                    )
                 }
             }
 

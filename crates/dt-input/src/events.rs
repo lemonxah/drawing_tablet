@@ -41,8 +41,20 @@ impl StylusState {
     /// Update from a protocol input event, returning whether the stylus is touching.
     pub fn update_from_event(&mut self, event: &InputEvent) -> bool {
         match event {
-            InputEvent::StylusMove { x, y, pressure, tilt_x, tilt_y }
-            | InputEvent::StylusDown { x, y, pressure, tilt_x, tilt_y } => {
+            InputEvent::StylusMove {
+                x,
+                y,
+                pressure,
+                tilt_x,
+                tilt_y,
+            }
+            | InputEvent::StylusDown {
+                x,
+                y,
+                pressure,
+                tilt_x,
+                tilt_y,
+            } => {
                 self.x = normalize_to_abs(*x, ABS_MAX);
                 self.y = normalize_to_abs(*y, ABS_MAX);
                 self.pressure = normalize_to_abs(*pressure, PRESSURE_MAX);
@@ -71,4 +83,6 @@ pub struct TouchSlot {
     pub x: i32,
     pub y: i32,
     pub active: bool,
+    /// Whether this slot is currently being reported to the OS via evdev.
+    pub reported_to_os: bool,
 }

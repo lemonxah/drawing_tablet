@@ -64,24 +64,89 @@ class MainActivity : ComponentActivity() {
             ?: remember { mutableStateOf(ConnectionState.Disconnected) }
         val discoveredServers by serviceDiscovery.servers.collectAsState()
         val scope = rememberCoroutineScope()
+        
+        val context = androidx.compose.ui.platform.LocalContext.current
+        val prefs = remember { PreferencesManager(context) }
+        
+        // Safety: Track rapid disconnects to prevent loops
+        var disconnectCount by remember { mutableIntStateOf(0) }
+
+        fun connectTo(address: String, port: Int) {
+            // Close existing client if any
+            currentClient?.close()
+
+            // Create new client and connect
+            val newClient = UdpClient(address, port)
+            currentClient = newClient
+            client = newClient
+
+            scope.launch {
+                newClient.connect()
+            }
+        }
+
+        // Auto-connect logic (Triggers on app start or recovery)
+        LaunchedEffect(discoveredServers, currentClient) {
+            // Only auto-connect if no client exists AND auto-connect is enabled
+            if (currentClient == null && prefs.shouldAutoConnect) {
+                val savedHost = prefs.rememberedServerHost
+                val savedPort = prefs.rememberedServerPort
+                if (savedHost != null) {
+                    val found = discoveredServers.find { it.host == savedHost && it.port == savedPort }
+                    if (found != null) {
+                        connectTo(found.host, found.port)
+                    }
+                }
+            }
+        }
+        
+        // Connection Monitoring: Reset count on stable connection, Disable auto-connect on loops
+        LaunchedEffect(connectionState) {
+            when (connectionState) {
+                is ConnectionState.Connected -> {
+                    // If we stay connected for 5 seconds, reset the error count
+                    kotlinx.coroutines.delay(5000)
+                    disconnectCount = 0
+                }
+                is ConnectionState.Disconnected, is ConnectionState.Error -> {
+                    // If we were trying to connect (client exists) and failed
+                    if (currentClient != null) {
+                        disconnectCount++
+                        
+                        if (disconnectCount >= 3) {
+                            prefs.shouldAutoConnect = false
+                            disconnectCount = 0
+                            android.widget.Toast.makeText(
+                                context, 
+                                "Auto-connect disabled due to unstable connection", 
+                                android.widget.Toast.LENGTH_LONG
+                            ).show()
+                        }
+                        
+                        // Reset client to allow retry (if not disabled)
+                        // This enables the "Auto-reconnect" behavior
+                        currentClient = null
+                    }
+                }
+                else -> {}
+            }
+        }
 
         when (val state = connectionState) {
             is ConnectionState.Disconnected, is ConnectionState.Connecting, is ConnectionState.Error -> {
                 ConnectionScreen(
                     connectionState = connectionState,
                     discoveredServers = discoveredServers,
-                    onConnect = { address, port ->
-                        // Close existing client if any
-                        currentClient?.close()
-
-                        // Create new client and connect
-                        val newClient = UdpClient(address, port)
-                        currentClient = newClient
-                        client = newClient
-
-                        scope.launch {
-                            newClient.connect()
+                    onConnect = { address, port, remember ->
+                        if (remember) {
+                            prefs.rememberedServerHost = address
+                            prefs.rememberedServerPort = port
+                            prefs.shouldAutoConnect = true
+                        } else {
+                            // If manual connection without remember, disable auto-connect for future
+                            prefs.shouldAutoConnect = false
                         }
+                        connectTo(address, port)
                     }
                 )
             }

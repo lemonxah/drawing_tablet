@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Drawing Tablet Server
+Comment=Stream your screen to an Android tablet
+Exec=cargo run --manifest-path /home/lemonxah/git/drawing_tablet/Cargo.toml --bin dt-server
+Icon=/home/lemonxah/git/drawing_tablet/crates/dt-server/assets/icon.png
+Terminal=false
+Type=Application
+Categories=Graphics;Utility;
+Keywords=tablet;drawing;wacom;stream;

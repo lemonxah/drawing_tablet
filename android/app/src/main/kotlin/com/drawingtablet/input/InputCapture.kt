@@ -9,6 +9,8 @@ import kotlin.math.sin
  * Captures stylus and touch input from MotionEvents.
  */
 object InputCapture {
+    private var lastButtonState = 0
+    var isTouchEnabled: Boolean = true
 
     /**
      * Convert a MotionEvent to InputEvents.
@@ -30,6 +32,8 @@ object InputCapture {
                 events.addAll(processStylusEvent(event, viewWidth, viewHeight))
             }
             MotionEvent.TOOL_TYPE_FINGER -> {
+                // Android has a native TOOL_TYPE_PALM (constant value 3), but it's not always reliable.
+                // We check strictly for FINGER here, but we can also filter explicitly if needed.
                 events.addAll(processTouchEvent(event, viewWidth, viewHeight))
             }
         }
@@ -55,6 +59,31 @@ object InputCapture {
         val tiltX = (Math.toDegrees(tilt.toDouble()) * cos(orientation.toDouble())).toFloat()
         val tiltY = (Math.toDegrees(tilt.toDouble()) * sin(orientation.toDouble())).toFloat()
 
+        // Check for button state changes on every event
+        val currentButtonState = event.buttonState
+        if (currentButtonState != lastButtonState) {
+            // Button 0 (Primary / Right Click)
+            // Some devices map stylus button to BUTTON_SECONDARY (Right Click)
+            val btn0Mask = MotionEvent.BUTTON_STYLUS_PRIMARY or MotionEvent.BUTTON_SECONDARY
+            val wasPressed0 = (lastButtonState and btn0Mask) != 0
+            val isPressed0 = (currentButtonState and btn0Mask) != 0
+            
+            if (wasPressed0 != isPressed0) {
+                events.add(InputEvent.StylusButton(0, isPressed0))
+            }
+
+            // Button 1 (Secondary)
+            val btn1Mask = MotionEvent.BUTTON_STYLUS_SECONDARY
+            val wasPressed1 = (lastButtonState and btn1Mask) != 0
+            val isPressed1 = (currentButtonState and btn1Mask) != 0
+
+            if (wasPressed1 != isPressed1) {
+                events.add(InputEvent.StylusButton(1, isPressed1))
+            }
+
+            lastButtonState = currentButtonState
+        }
+
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
                 events.add(InputEvent.StylusDown(x, y, pressure, tiltX, tiltY))
@@ -74,21 +103,6 @@ object InputCapture {
             MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_CANCEL -> {
                 events.add(InputEvent.StylusUp)
             }
-            MotionEvent.ACTION_BUTTON_PRESS -> {
-                val button = when {
-                    event.isButtonPressed(MotionEvent.BUTTON_STYLUS_PRIMARY) -> 0
-                    event.isButtonPressed(MotionEvent.BUTTON_STYLUS_SECONDARY) -> 1
-                    // Some Android devices report the stylus button as a generic secondary button (Right Click)
-                    event.isButtonPressed(MotionEvent.BUTTON_SECONDARY) -> 0
-                    else -> return events
-                }
-                events.add(InputEvent.StylusButton(button, true))
-            }
-            MotionEvent.ACTION_BUTTON_RELEASE -> {
-                // Determine which button was released - release both to be safe as we don't track state here
-                events.add(InputEvent.StylusButton(0, false))
-                events.add(InputEvent.StylusButton(1, false))
-            }
         }
 
         return events
@@ -99,6 +113,20 @@ object InputCapture {
         viewWidth: Int,
         viewHeight: Int
     ): List<InputEvent> {
+        // Mode 1: Touch Disabled (Pen Only)
+        // Block all finger input if disabled
+        if (!isTouchEnabled) {
+            return emptyList()
+        }
+
+        // Native Palm Rejection Check
+        // If the OS flags this event as a PALM (constant value 3), ignore it entirely.
+        for (i in 0 until event.pointerCount) {
+             if (event.getToolType(i) == 3) { // 3 = TOOL_TYPE_PALM
+                 return emptyList()
+             }
+        }
+
         val events = mutableListOf<InputEvent>()
 
         when (event.actionMasked) {

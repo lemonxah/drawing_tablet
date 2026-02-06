@@ -1,4 +1,5 @@
 use crate::config::ServerConfig;
+use dt_input::TabletDescriptor;
 use eframe::egui;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -42,7 +43,6 @@ pub struct DtServerApp {
 
     // Config state (editable when stopped)
     port_input: String,
-    fps_input: String,
     bitrate_input: String,
     keyframe_input: String,
 
@@ -67,7 +67,6 @@ impl DtServerApp {
             stats,
             running_flag,
             port_input: "9999".to_string(),
-            fps_input: "60".to_string(),
             bitrate_input: "8000".to_string(),
             keyframe_input: "10".to_string(),
             show_help_dialog: false,
@@ -83,7 +82,7 @@ impl DtServerApp {
 
         // Parse config
         let port = self.port_input.trim().parse::<u16>().unwrap_or(9999);
-        let fps = self.fps_input.trim().parse::<u32>().unwrap_or(100).max(1);
+        let fps = 100; // Hardcoded FPS limit
         let bitrate = self.bitrate_input.trim().parse::<u32>().unwrap_or(50000).max(1000);
         let keyframe_interval = self.keyframe_input.trim().parse::<u32>().unwrap_or(2).max(1);
 
@@ -93,6 +92,7 @@ impl DtServerApp {
             bitrate,
             keyframe_interval,
             output_name: None, // Auto-mapping removed
+            tablet: TabletDescriptor::default(),
         };
 
         let stats = self.stats.clone();
@@ -287,13 +287,6 @@ impl eframe::App for DtServerApp {
                                 );
                                 ui.end_row();
 
-                                ui.label("FPS Limit");
-                                ui.add(
-                                    egui::TextEdit::singleline(&mut self.fps_input)
-                                        .desired_width(100.0),
-                                );
-                                ui.end_row();
-
                                 ui.label("Bitrate (kbps)");
                                 ui.add(
                                     egui::TextEdit::singleline(&mut self.bitrate_input)
@@ -368,15 +361,12 @@ impl eframe::App for DtServerApp {
             );
             ui.add_space(5.0);
 
-            let card_width = (ui.available_width() - 20.0) / 3.0;
-
             ui.horizontal(|ui| {
-                // FPS Card
-                self.stat_card(ui, "Encoded FPS", &stats.encoded.to_string(), card_width);
-                // Bandwidth/Data Card
-                self.stat_card(ui, "Packets Sent", &stats.sent.to_string(), card_width);
-                // Drops/Errors Card
-                self.stat_card(ui, "Dropped Frames", &stats.dropped.to_string(), card_width);
+                ui.columns(3, |columns| {
+                    self.stat_card(&mut columns[0], "Encoded FPS", &stats.encoded.to_string());
+                    self.stat_card(&mut columns[1], "Packets Sent", &stats.sent.to_string());
+                    self.stat_card(&mut columns[2], "Dropped Frames", &stats.dropped.to_string());
+                });
             });
 
             ui.add_space(20.0);
@@ -391,39 +381,39 @@ impl eframe::App for DtServerApp {
             ui.add_space(5.0);
 
             ui.horizontal(|ui| {
-                let btn_width = (ui.available_width() - 10.0) / 2.0;
-                
-                // Button 0
-                let color0 = if stats.stylus_buttons[0] { egui::Color32::GREEN } else { egui::Color32::from_gray(50) };
-                egui::Frame::none()
-                    .fill(egui::Color32::from_rgb(27, 30, 40))
-                    .rounding(6.0)
-                    .inner_margin(12.0)
-                    .show(ui, |ui| {
-                        ui.set_width(btn_width);
-                        ui.horizontal(|ui| {
-                            ui.label("Button 1 (Side)");
-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                ui.painter().circle_filled(ui.available_rect_before_wrap().center(), 8.0, color0);
+                ui.columns(2, |columns| {
+                    // Button 0
+                    let color0 = if stats.stylus_buttons[0] { egui::Color32::GREEN } else { egui::Color32::from_gray(50) };
+                    egui::Frame::none()
+                        .fill(egui::Color32::from_rgb(27, 30, 40))
+                        .rounding(6.0)
+                        .inner_margin(12.0)
+                        .show(&mut columns[0], |ui| {
+                            ui.set_width(ui.available_width());
+                            ui.horizontal(|ui| {
+                                ui.label("Button 1 (Side)");
+                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                    ui.painter().circle_filled(ui.available_rect_before_wrap().center(), 8.0, color0);
+                                });
                             });
                         });
-                    });
-
-                // Button 1
-                let color1 = if stats.stylus_buttons[1] { egui::Color32::GREEN } else { egui::Color32::from_gray(50) };
-                egui::Frame::none()
-                    .fill(egui::Color32::from_rgb(27, 30, 40))
-                    .rounding(6.0)
-                    .inner_margin(12.0)
-                    .show(ui, |ui| {
-                        ui.set_width(btn_width);
-                        ui.horizontal(|ui| {
-                            ui.label("Button 2 (Eraser)");
-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                ui.painter().circle_filled(ui.available_rect_before_wrap().center(), 8.0, color1);
+    
+                    // Button 1
+                    let color1 = if stats.stylus_buttons[1] { egui::Color32::GREEN } else { egui::Color32::from_gray(50) };
+                    egui::Frame::none()
+                        .fill(egui::Color32::from_rgb(27, 30, 40))
+                        .rounding(6.0)
+                        .inner_margin(12.0)
+                        .show(&mut columns[1], |ui| {
+                            ui.set_width(ui.available_width());
+                            ui.horizontal(|ui| {
+                                ui.label("Button 2 (Eraser)");
+                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                    ui.painter().circle_filled(ui.available_rect_before_wrap().center(), 8.0, color1);
+                                });
                             });
                         });
-                    });
+                });
             });
 
             ui.add_space(20.0);
@@ -497,13 +487,13 @@ impl eframe::App for DtServerApp {
 
 impl DtServerApp {
     // Helper for rendering stat cards
-    fn stat_card(&self, ui: &mut egui::Ui, title: &str, value: &str, width: f32) {
+    fn stat_card(&self, ui: &mut egui::Ui, title: &str, value: &str) {
         egui::Frame::none()
             .fill(egui::Color32::from_rgb(27, 30, 40))
             .rounding(6.0)
             .inner_margin(12.0)
             .show(ui, |ui| {
-                ui.set_width(width);
+                ui.set_width(ui.available_width());
                 ui.vertical(|ui| {
                     ui.label(
                         egui::RichText::new(title)

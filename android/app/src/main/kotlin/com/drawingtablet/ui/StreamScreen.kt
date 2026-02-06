@@ -5,12 +5,17 @@ import android.view.SurfaceView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -141,23 +146,54 @@ fun StreamScreen(
             }
         }
 
-        // ── Toggle button (bottom-right) ─────────────────────────────
+        // ── Toggle buttons (bottom-right) ────────────────────────────
         Box(
             modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.BottomEnd
         ) {
-            IconButton(
-                onClick = { showStats = !showStats },
-                colors = IconButtonDefaults.iconButtonColors(
-                    containerColor = Color.Black.copy(alpha = 0.5f)
-                ),
-                modifier = Modifier.padding(12.dp).size(44.dp)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(12.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Filled.Info,
-                    contentDescription = "Toggle stats",
-                    tint = Color.White
-                )
+                var isTouchEnabled by remember { mutableStateOf(true) }
+
+                // Touch Toggle (Hand/Finger)
+                IconButton(
+                    onClick = {
+                        isTouchEnabled = !isTouchEnabled
+                        InputCapture.isTouchEnabled = isTouchEnabled
+                    },
+                    colors = IconButtonDefaults.iconButtonColors(
+                        containerColor = if (isTouchEnabled) 
+                            Color.Black.copy(alpha = 0.5f) // Unlocked/Default
+                        else 
+                            MaterialTheme.colorScheme.primary // Locked/Active Mode
+                    ),
+                    modifier = Modifier.size(44.dp)
+                ) {
+                    Icon(
+                        imageVector = if (isTouchEnabled) Icons.Filled.Check else Icons.Filled.Lock,
+                        contentDescription = if (isTouchEnabled) "Touch Enabled" else "Touch Disabled (Pen Only)",
+                        tint = Color.White
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                // Stats Toggle
+                IconButton(
+                    onClick = { showStats = !showStats },
+                    colors = IconButtonDefaults.iconButtonColors(
+                        containerColor = Color.Black.copy(alpha = 0.5f)
+                    ),
+                    modifier = Modifier.size(44.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Info,
+                        contentDescription = "Toggle stats",
+                        tint = Color.White
+                    )
+                }
             }
         }
 

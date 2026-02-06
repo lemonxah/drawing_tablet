@@ -82,7 +82,22 @@ fn main() -> Result<()> {
 
     let app = DtServerApp::new(stats, running_flag);
 
-    let native_options = eframe::NativeOptions::default();
+    let mut native_options = eframe::NativeOptions::default();
+    native_options.viewport.inner_size = Some(eframe::egui::vec2(1000.0, 700.0));
+    
+    // Load icon
+    let icon_data = include_bytes!("../assets/icon.png");
+    if let Ok(image) = image::load_from_memory(icon_data) {
+        let image = image.into_rgba8();
+        let (width, height) = image.dimensions();
+        let rgba = image.into_raw();
+        native_options.viewport.icon = Some(Arc::new(eframe::egui::IconData {
+            rgba,
+            width,
+            height,
+        }));
+    }
+
     eframe::run_native(
         "Drawing Tablet Server",
         native_options,
@@ -139,7 +154,7 @@ pub async fn run_server_async(
 
     // Create virtual tablet
     info!("Creating virtual tablet device...");
-    let tablet = VirtualTablet::new(monitor.width, monitor.height)?;
+    let tablet = VirtualTablet::new(monitor.width, monitor.height, &config.tablet)?;
     info!("Virtual tablet created");
 
     // Create encoder

@@ -1,5 +1,6 @@
 //! Server configuration.
 
+use dt_input::TabletDescriptor;
 use std::env;
 
 /// Server configuration options.
@@ -15,6 +16,8 @@ pub struct ServerConfig {
     pub keyframe_interval: u32,
     /// Manually selected output screen for touch mapping (optional).
     pub output_name: Option<String>,
+    /// Selected tablet descriptor for emulation.
+    pub tablet: TabletDescriptor,
 }
 
 impl Default for ServerConfig {
@@ -25,6 +28,7 @@ impl Default for ServerConfig {
             bitrate: 8000,
             keyframe_interval: 10,
             output_name: None,
+            tablet: TabletDescriptor::default(),
         }
     }
 }
