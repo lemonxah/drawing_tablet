@@ -163,9 +163,7 @@ For the best drawing experience in Krita, you need to adjust the brush smoothing
 
 1. Open Krita and select any brush tool
 2. In the **Tool Options** docker (usually on the right side), find the **Brush Smoothing** section at the bottom
-3. Change the smoothing mode from **Weighted** to **Basic** or **None**
-
-**Why?** Krita's "Weighted Smoothing" algorithm uses time-based interpolation that can cause line spikes when input events arrive with irregular timing (due to network jitter). The "Basic" smoothing mode works perfectly with this tablet.
+3. Change the smoothing mode from **Basic** to **Weighted** or **None**
 
 | Smoothing Mode | Compatibility |
 |:--------------|:--------------|
