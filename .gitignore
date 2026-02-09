@@ -9,6 +9,7 @@ android/local.properties
 android/*.iml
 android/.idea/
 android/*.keystore
+android/.kotlin
 
 # IDE
 .idea/
