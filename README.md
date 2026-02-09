@@ -170,8 +170,8 @@ For the best drawing experience in Krita, you need to adjust the brush smoothing
 | Smoothing Mode | Compatibility |
 |:--------------|:--------------|
 | None | ✅ Works perfectly |
-| Basic | ✅ Works perfectly |
-| Weighted | ⚠️ May cause line spikes |
+| Basic | ⚠️ May cause line spikes  |
+| Weighted | ✅  Works perfectly |
 | Stabilizer | ✅ Works (adds input lag) |
 
 ---
