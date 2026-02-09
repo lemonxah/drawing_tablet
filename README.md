@@ -1,4 +1,4 @@
-# Open Tablet Driver (OTD) - Remote Drawing Tablet
+# Drawing Tablet
 
 A high-performance, low-latency drawing tablet solution that turns your Android device into a professional graphics tablet for Linux (Wayland).
 
