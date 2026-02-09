@@ -4,6 +4,8 @@ A high-performance, low-latency drawing tablet solution that turns your Android 
 
 ## 🚀 Overview
 
+Check out the [Official website](https://lemonxah.github.io/drawing_tablet/)
+
 This project consists of two parts:
 1.  **Android Client:** A dedicated app that captures stylus input (pressure, tilt, coordinates) and renders a low-latency video stream of your PC screen.
 2.  **Rust Server:** A lightweight Linux daemon that:
@@ -15,7 +17,7 @@ The result is a Cintiq-like experience on your Android tablet, entirely over WiF
 
 ## ✨ Features
 
-*   **Sub-millisecond Input Latency:** UDP-based protocol for instant cursor response.
+*   **Millisecond Input Latency:** TCP-based protocol for instant cursor response.
 *   **High-Quality Screen Mirroring:** H.264/H.265 hardware encoding.
 *   **Full Wacom Emulation:** Supports Pressure, Tilt, and Hover.
 *   **Gesture Support:** Pinch-to-zoom, Pan, and Rotate support in apps like Krita/GIMP (Server-side gesture handling).
