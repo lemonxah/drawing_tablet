@@ -1,19 +1,24 @@
 package com.drawingtablet.ui
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import com.drawingtablet.R
 import com.drawingtablet.network.ConnectionState
 import com.drawingtablet.network.DiscoveredServer
 
@@ -34,8 +39,8 @@ fun ConnectionScreen(
             .background(
                 brush = Brush.verticalGradient(
                     colors = listOf(
-                        Color(0xFF1A1A2E), // Dark Blue/Black
-                        Color(0xFF16213E)  // Deep Blue
+                        Color(0xFF1A2E24), // Dark teal/black
+                        Color(0xFF163E2E)  // Deep teal
                     )
                 )
             )
@@ -48,11 +53,12 @@ fun ConnectionScreen(
             verticalArrangement = Arrangement.Center
         ) {
             // ── Header ─────────────────────────────────────────────────
-            Icon(
-                imageVector = Icons.Default.Edit,
-                contentDescription = null,
-                modifier = Modifier.size(64.dp),
-                tint = Color(0xFFE94560) // Accent Red/Pink
+            Image(
+                painter = painterResource(id = R.mipmap.ic_launcher),
+                contentDescription = "Drawing Tablet",
+                modifier = Modifier
+                    .size(120.dp)
+                    .clip(RoundedCornerShape(24.dp))
             )
             Spacer(modifier = Modifier.height(16.dp))
             Text(
@@ -66,7 +72,7 @@ fun ConnectionScreen(
             // ── Discovery / List ───────────────────────────────────────
             if (discoveredServers.isEmpty()) {
                 CircularProgressIndicator(
-                    color = Color(0xFFE94560),
+                    color = Color(0xFF5BA88C),
                     modifier = Modifier.size(48.dp)
                 )
                 Spacer(modifier = Modifier.height(24.dp))
@@ -117,7 +123,7 @@ fun ConnectionScreen(
                         checked = rememberServer,
                         onCheckedChange = { rememberServer = it },
                         colors = CheckboxDefaults.colors(
-                            checkedColor = Color(0xFFE94560),
+                            checkedColor = Color(0xFF5BA88C),
                             uncheckedColor = Color.Gray,
                             checkmarkColor = Color.White
                         )
@@ -162,7 +168,7 @@ private fun ServerCard(
             .fillMaxWidth()
             .clickable(enabled = enabled, onClick = onClick),
         colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF0F3460) // Lighter blue
+            containerColor = Color(0xFF0F4634) // Teal card
         )
     ) {
         Row(
@@ -186,9 +192,9 @@ private fun ServerCard(
             }
 
             Icon(
-                imageVector = Icons.Default.Edit, // Use simple arrow or connect icon
+                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                 contentDescription = "Connect",
-                tint = Color(0xFFE94560)
+                tint = Color(0xFF5BA88C)
             )
         }
     }

@@ -56,6 +56,9 @@ android-build:
 android-build-release:
     cd android && ./gradlew assembleRelease
 
+android-build-release-bundle:
+    cd android && ./gradlew bundleRelease
+
 # Install Android app via ADB (debug)
 android-install:
     cd android && ./gradlew installDebug

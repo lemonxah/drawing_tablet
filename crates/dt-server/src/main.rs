@@ -89,7 +89,7 @@ fn main() -> Result<()> {
 
     let mut native_options = eframe::NativeOptions::default();
     native_options.viewport.inner_size = Some(eframe::egui::vec2(1000.0, 700.0));
-    
+
     // Load icon
     let icon_data = include_bytes!("../assets/icon.png");
     if let Ok(image) = image::load_from_memory(icon_data) {
@@ -283,7 +283,7 @@ async fn run_server(
     let mut sequence: u32 = 0;
     let mut last_heartbeat = Instant::now();
     let mut keyframe_requested = false;
-    
+
     // Event retimer for smooth input delivery
     let mut event_retimer = EventRetimer::new();
 
@@ -413,7 +413,7 @@ async fn run_server(
                         warn!("Failed to process input: {}", e);
                     }
                 }
-                
+
                 // Check if client is still connected
                 if let Some(ref c) = client {
                     if !tcp_server.is_client_connected(c.tcp_client_id).await {
@@ -428,7 +428,9 @@ async fn run_server(
         // Update connected client in GUI stats
         if sequence.is_multiple_of(60) {
             let mut guard = stats.lock().unwrap();
-            guard.connected_client = client.as_ref().and_then(|c| c.udp_addr.map(|a| a.to_string()));
+            guard.connected_client = client
+                .as_ref()
+                .and_then(|c| c.udp_addr.map(|a| a.to_string()));
         }
 
         // Check for keyframe requests

@@ -140,21 +140,21 @@ impl DtServerApp {
 
 impl eframe::App for DtServerApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // --- Theme Configuration ---
+        // --- Theme Configuration (Teal/Green) ---
         let mut visuals = egui::Visuals::dark();
-        visuals.window_fill = egui::Color32::from_rgb(11, 14, 20); // Deep background
-        visuals.panel_fill = egui::Color32::from_rgb(11, 14, 20);
+        visuals.window_fill = egui::Color32::from_rgb(14, 22, 18); // Deep teal background
+        visuals.panel_fill = egui::Color32::from_rgb(14, 22, 18);
 
         // Widget styles
-        visuals.widgets.noninteractive.bg_fill = egui::Color32::from_rgb(27, 30, 40); // Card background
+        visuals.widgets.noninteractive.bg_fill = egui::Color32::from_rgb(22, 36, 30); // Card background
         visuals.widgets.noninteractive.fg_stroke =
             egui::Stroke::new(1.0, egui::Color32::from_gray(180));
 
-        visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(35, 38, 50); // Input fields
-        visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(45, 48, 60);
-        visuals.widgets.active.bg_fill = egui::Color32::from_rgb(55, 58, 70);
+        visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(28, 44, 36); // Input fields
+        visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(36, 56, 46);
+        visuals.widgets.active.bg_fill = egui::Color32::from_rgb(44, 68, 56);
 
-        visuals.selection.bg_fill = egui::Color32::from_rgb(58, 118, 240); // Accent Blue
+        visuals.selection.bg_fill = egui::Color32::from_rgb(91, 168, 140); // Accent Teal #5BA88C
         ctx.set_visuals(visuals);
 
         let is_running = self.running_flag.load(Ordering::SeqCst);
@@ -203,11 +203,11 @@ impl eframe::App for DtServerApp {
                     ui.vertical_centered(|ui| {
                         ui.add_space(10.0);
                         let (status_text, status_color) = if is_running {
-                            ("ACTIVE", egui::Color32::from_rgb(100, 255, 100))
+                            ("ACTIVE", egui::Color32::from_rgb(91, 200, 150))
                         } else if self.server_task.is_some() {
-                            ("STOPPING", egui::Color32::from_rgb(255, 200, 100))
+                            ("STOPPING", egui::Color32::from_rgb(200, 180, 80))
                         } else {
-                            ("OFFLINE", egui::Color32::from_rgb(255, 100, 100))
+                            ("OFFLINE", egui::Color32::from_rgb(200, 90, 90))
                         };
 
                         ui.label(
@@ -233,7 +233,7 @@ impl eframe::App for DtServerApp {
                 } else if self.server_task.is_some() {
                     ("STOPPING...", egui::Color32::from_rgb(80, 80, 80))
                 } else {
-                    ("START SERVER", egui::Color32::from_rgb(58, 118, 240))
+                    ("START SERVER", egui::Color32::from_rgb(58, 140, 110))
                 };
 
                 if ui
@@ -269,7 +269,7 @@ impl eframe::App for DtServerApp {
                 ui.add_space(5.0);
 
                 egui::Frame::new()
-                    .fill(egui::Color32::from_rgb(20, 22, 30))
+                    .fill(egui::Color32::from_rgb(18, 28, 24))
                     .corner_radius(8.0)
                     .inner_margin(10.0)
                     .show(ui, |ui| {
@@ -315,7 +315,7 @@ impl eframe::App for DtServerApp {
                                 .size(14.0)
                                 .color(egui::Color32::from_gray(200)),
                         )
-                        .fill(egui::Color32::from_rgb(35, 38, 50))
+                        .fill(egui::Color32::from_rgb(28, 44, 36))
                         .corner_radius(6.0),
                     )
                     .clicked()
@@ -331,13 +331,13 @@ impl eframe::App for DtServerApp {
                         ui.label(
                             egui::RichText::new(format!("Connected: {}", client))
                                 .size(11.0)
-                                .color(egui::Color32::GREEN),
+                                .color(egui::Color32::from_rgb(91, 200, 150)),
                         );
                     } else {
                         ui.label(
                             egui::RichText::new("Waiting for client...")
                                 .size(11.0)
-                                .color(egui::Color32::YELLOW),
+                                .color(egui::Color32::from_rgb(200, 180, 80)),
                         );
                     }
                     ui.label(
@@ -383,9 +383,9 @@ impl eframe::App for DtServerApp {
             ui.horizontal(|ui| {
                 ui.columns(2, |columns| {
                     // Button 0
-                    let color0 = if stats.stylus_buttons[0] { egui::Color32::GREEN } else { egui::Color32::from_gray(50) };
+                    let color0 = if stats.stylus_buttons[0] { egui::Color32::from_rgb(91, 168, 140) } else { egui::Color32::from_gray(50) };
                     egui::Frame::new()
-                        .fill(egui::Color32::from_rgb(27, 30, 40))
+                        .fill(egui::Color32::from_rgb(22, 36, 30))
                         .corner_radius(6.0)
                         .inner_margin(12.0)
                         .show(&mut columns[0], |ui| {
@@ -399,9 +399,9 @@ impl eframe::App for DtServerApp {
                         });
     
                     // Button 1
-                    let color1 = if stats.stylus_buttons[1] { egui::Color32::GREEN } else { egui::Color32::from_gray(50) };
+                    let color1 = if stats.stylus_buttons[1] { egui::Color32::from_rgb(91, 168, 140) } else { egui::Color32::from_gray(50) };
                     egui::Frame::new()
-                        .fill(egui::Color32::from_rgb(27, 30, 40))
+                        .fill(egui::Color32::from_rgb(22, 36, 30))
                         .corner_radius(6.0)
                         .inner_margin(12.0)
                         .show(&mut columns[1], |ui| {
@@ -428,9 +428,9 @@ impl eframe::App for DtServerApp {
             ui.add_space(5.0);
 
             egui::Frame::new()
-                .fill(egui::Color32::from_rgb(15, 17, 22))
+                .fill(egui::Color32::from_rgb(12, 20, 16))
                 .corner_radius(6.0)
-                .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(30, 32, 40)))
+                .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(26, 42, 34)))
                 .inner_margin(10.0)
                 .show(ui, |ui| {
                     egui::ScrollArea::vertical()
@@ -489,7 +489,7 @@ impl DtServerApp {
     // Helper for rendering stat cards
     fn stat_card(&self, ui: &mut egui::Ui, title: &str, value: &str) {
         egui::Frame::new()
-            .fill(egui::Color32::from_rgb(27, 30, 40))
+            .fill(egui::Color32::from_rgb(22, 36, 30))
             .corner_radius(6.0)
             .inner_margin(12.0)
             .show(ui, |ui| {
