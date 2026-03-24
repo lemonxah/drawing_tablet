@@ -16,6 +16,12 @@ android/.kotlin
 *.iml
 .vscode/
 
+# Nix
+result
+.devenv/
+.devenv.flake.nix
+devenv.lock
+
 # OS
 .DS_Store
 Thumbs.db

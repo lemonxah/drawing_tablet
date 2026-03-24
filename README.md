@@ -89,6 +89,62 @@ Install [Rustup](https://rustup.rs/):
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
+### Nix / NixOS
+
+A Nix flake is provided for reproducible builds and easy integration.
+
+#### Run directly (no install)
+```bash
+nix run github:lemonxah/drawing_tablet
+```
+
+#### NixOS (system-wide)
+
+Add to your `flake.nix` inputs and apply the overlay:
+
+```nix
+{
+  inputs.drawing-tablet.url = "github:lemonxah/drawing_tablet";
+
+  outputs = { nixpkgs, drawing-tablet, ... }: {
+    nixosConfigurations.myhost = nixpkgs.lib.nixosSystem {
+      modules = [{
+        nixpkgs.overlays = [ drawing-tablet.overlays.default ];
+        environment.systemPackages = [ pkgs.drawing-tablet ];
+      }];
+    };
+  };
+}
+```
+
+#### Home Manager
+
+```nix
+{
+  inputs.drawing-tablet.url = "github:lemonxah/drawing_tablet";
+
+  outputs = { nixpkgs, home-manager, drawing-tablet, ... }: {
+    homeConfigurations.myuser = home-manager.lib.homeManagerConfiguration {
+      modules = [{
+        nixpkgs.overlays = [ drawing-tablet.overlays.default ];
+        home.packages = [ pkgs.drawing-tablet ];
+      }];
+    };
+  };
+}
+```
+
+#### Development shell
+
+```bash
+# Using the flake dev shell
+nix develop github:lemonxah/drawing_tablet
+
+# Or clone and use devenv
+git clone https://github.com/lemonxah/drawing_tablet && cd drawing_tablet
+devenv shell
+```
+
 ### Android Client
 *   **Android Studio** (Koala or newer recommended).
 *   **Android SDK Platform 34** (Android 14).
